@@ -93,8 +93,11 @@ src="$(find "$work" -mindepth 1 -maxdepth 1 -type d -name 'wngmn-*' | head -1)"
 # Handled after the fetch because the uninstall logic lives in the repo, so there is exactly
 # one copy of it rather than a second one here that drifts.
 
+# Not `exec`: that replaces this process, so the EXIT trap never fires and the temp
+# directory this script just created is left behind on every uninstall.
 if [ "${1:-}" = "--uninstall" ]; then
-    exec bash "$src/Scripts/install.sh" --uninstall
+    bash "$src/Scripts/install.sh" --uninstall
+    exit 0
 fi
 
 # ---------------------------------------------------------------- build and install
