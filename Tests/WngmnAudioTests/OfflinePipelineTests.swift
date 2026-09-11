@@ -5,8 +5,13 @@ import Synchronization
 @testable import WngmnCore
 
 /// Golden-file tier: real recorded speech through the real endpointer, resampler, analyser
-/// and assembler. Needs no system-audio permission — only the tap does — so this runs in any
-/// terminal, which is what keeps ordinary development off the TCC critical path.
+/// and assembler. Needs no system-audio permission — only the tap does — which is what keeps
+/// ordinary development off the TCC critical path.
+///
+/// It does need the en-US speech model: it drives the real `Transcriber`, and without the
+/// asset installed these tests fail rather than skip. That is why CI passes `--skip` for this
+/// suite and the two that share this file. Run `wngmn install-model --locale en-US` before
+/// the full suite locally.
 @Suite("Offline pipeline", .serialized)
 struct OfflinePipelineTests {
     static func fixture(_ name: String) throws -> URL {

@@ -134,9 +134,9 @@ JSON Lines on stdout, one object per line. Diagnostics go to stderr, so a pipe s
 
 - **Audio never does.** Buffers are processed in memory and discarded. Nothing is recorded.
 - **Ask sends text** to the Claude API: the question, up to six preceding ones, and your
-  profile. Nothing is sent until you press the button.
-- **Prefetch changes that.** It answers every caller question as it lands, including ones you'd
-  never have asked. Off by default; it costs an API call per question.
+  profile. By default this happens only when you press the button.
+- **The prefetch toggle removes that guarantee.** It answers every caller question as it lands,
+  including ones you'd never have asked. Off by default; it costs an API call per question.
 - **`install-model` downloads from Apple.** Explicit, and only that command.
 - **The transcript hits disk only with `--serve`**, under
   `~/Library/Application Support/wngmn/sessions/`, so a run that dies mid-call can resume.
