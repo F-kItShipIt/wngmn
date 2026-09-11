@@ -8,73 +8,214 @@ itself instead of waiting on the Speech framework. Audio never leaves your machi
 
 ![The wngmn page: an answer on the left, latency and the question list on the right](docs/images/page.png)
 
-<sub>An offline replay of a test fixture, not a live call.</sub>
+<sub>An offline replay of a test fixture. The latency shown is inflated by the slowed
+playback; on a real call it lands in the 67–121 ms range.</sub>
 
 ## Requirements
 
 - macOS 26, and a Swift 6.2 toolchain.
 - No third-party dependencies. A clean machine builds with no network fetch.
-- A speech model, installed once. Step 2 below.
+- A speech model, installed once. One command, below.
 - No credentials, except for the Ask button.
 
 ## Install
 
-Build from source. There are no releases or Homebrew tap: the bundle is ad-hoc signed, so it is
-trusted only by the machine that built it.
+```sh
+curl -fsSL https://raw.githubusercontent.com/skhan75/wngmn/main/Scripts/bootstrap.sh | bash
+```
 
-**1. Build.**
+This builds from source on your machine, installs `wngmn.app`, and links `wngmn` onto your
+PATH. It takes a few minutes on a cold checkout and needs no `sudo`.
+
+Then the two steps that make it usable:
 
 ```sh
-git clone https://github.com/skhan75/wngmn.git
-cd wngmn
+wngmn install-model --locale en-US   # 396 MB, from Apple
+wngmn selftest                       # plays a tone, asserts the tap heard it
+```
+
+The model is a hard prerequisite, not a lazy download. Without it a run stops immediately
+rather than transcribing silence for a whole call.
+
+If `selftest` fails, macOS denied System Audio Recording. A denial is silent in the worst way:
+every Core Audio call still returns success and the stream is digital silence, indistinguishable
+from a quiet room. That is the entire reason this check exists —
+[docs/PERMISSIONS.md](docs/PERMISSIONS.md).
+
+<details>
+<summary>Why there is no prebuilt binary to download</summary>
+
+The bundle is ad-hoc signed, so it is trusted only by the machine that produced it. A binary
+downloaded from a release would be quarantined by Gatekeeper, and its microphone entitlement
+would not be honoured — which for this tool fails silently, as a call transcribed from digital
+silence. Publishing real binaries needs a Developer ID certificate and notarisation. Until
+that exists, compiling locally is the only way the permissions actually work.
+
+</details>
+
+<details>
+<summary>Manual install, pinning a version, and uninstalling</summary>
+
+```sh
+git clone https://github.com/skhan75/wngmn.git && cd wngmn
+Scripts/install.sh                      # build, bundle, sign, link
+```
+
+Or run the binary straight out of the build directory without installing at all:
+
+```sh
 swift build -c release
-```
-
-**2. Install the speech model.** 396 MB from Apple, which is why nothing fetches it implicitly.
-Without it a run stops immediately rather than transcribing silence for a whole call.
-
-```sh
-./.build/release/wngmn install-model --locale en-US
-```
-
-**3. Check the audio tap.** This plays a tone and asserts the tap heard it.
-
-```sh
 ./.build/release/wngmn selftest
 ```
 
-Run it **by path**. A bare `wngmn` resolves through `$PATH` to whatever was installed last,
-which is a different binary holding a different permission grant.
-
-If it fails, macOS denied System Audio Recording. The grant belongs to your *terminal app*, not
-to this binary, and a denial is silent: every Core Audio call still returns success and the
-stream is digital silence. That is why this check exists —
-[docs/PERMISSIONS.md](docs/PERMISSIONS.md).
-
-**Optional:** `Scripts/install.sh` installs a signed `wngmn.app` into `/Applications`. It buys
-identity only — the grant belongs to wngmn under its own name, at a fixed path. Everything here
-works without it.
-
-## Use it
+The installer takes `WNGMN_REF` to pin a branch, tag or commit, and `PREFIX` / `BINDIR` to
+choose where things land:
 
 ```sh
-# Normal use: transcript on a page at http://127.0.0.1:7373
-./.build/release/wngmn --serve
+BOOT=https://raw.githubusercontent.com/skhan75/wngmn/main/Scripts/bootstrap.sh
 
-# Both sides of the call, each line labelled Caller or You (assumes headphones)
-./.build/release/wngmn --serve --mic
+curl -fsSL $BOOT | WNGMN_REF=main BINDIR=~/bin bash   # pin a ref, choose the link directory
+curl -fsSL $BOOT | bash -s -- --uninstall             # remove the app and the link
+```
 
-# With prepared material, so Ask has something to answer from
-./.build/release/wngmn --serve --profile profiles/system_design.md
+One caveat if you keep both: running `wngmn` bare resolves through `$PATH` to whatever was
+installed last, which is a different binary from `./.build/release/wngmn` and holds a different
+permission grant. When testing a local build, run it by path.
 
-# Read it on a phone, so it isn't on the screen you're sharing
-./.build/release/wngmn --serve --listen
+</details>
 
-# Rehearse against a recording; needs no audio permission
-./.build/release/wngmn offline clip.wav --serve
+## Try it without a call
+
+Replays a recorded fixture through the real pipeline and serves the page. Needs no audio
+permission, and the shipped example profile means **Ask** works too. The fixture and the
+profile live in the repository, so this one needs a checkout:
+
+```sh
+git clone https://github.com/skhan75/wngmn.git && cd wngmn
+
+wngmn offline Tests/WngmnAudioTests/Fixtures/two-questions.wav \
+  --serve --profile profiles/example-interview.md
+```
+
+Open http://127.0.0.1:7373, wait for the two questions to land, press **Ask** on either.
+
+## Examples
+
+**The everyday one.** Taps Zoom and Chrome, serves on loopback.
+
+```sh
+wngmn --serve
+```
+
+**Both sides of the call.** Each line is labelled Caller or You. Assumes headphones — on
+speakers your mic hears the caller too and their words appear under both labels.
+
+```sh
+wngmn --serve --mic
+```
+
+**Tune the mic to your room.** Run `wngmn miccheck` first; it measures and prints the number to
+use. `wngmn devices` lists the UIDs.
+
+```sh
+wngmn --serve --mic --mic-device "BuiltInMicrophoneDevice" --mic-open-db -31
+```
+
+**Tap something that isn't Zoom or Chrome.** The default scope is
+`us.zoom.xos`, `us.zoom.CptHost`, `us.zoom.caphost`, `com.google.Chrome` and
+`com.google.Chrome.helper`. For Teams, Slack huddles, FaceTime or a browser that isn't Chrome,
+find the bundle ID and name it. Do this while the call is running: the list is of processes
+currently producing audio, and conferencing apps rarely render call audio from the process you
+would guess.
+
+```sh
+wngmn devices                                    # lists audio processes and their bundle IDs
+wngmn --serve --bundle-id <the one you saw>      # repeatable, replaces the default list
+wngmn --serve --global                           # or skip the guessing entirely
+```
+
+`--global` taps every sound on the machine, music and notifications included. It is the
+reliable way to find out whether an app is tappable at all, and the fastest thing to reach for
+when a scoped run transcribes nothing.
+
+**Read it on your phone**, so the transcript is not on the screen you are sharing. Prints a URL
+with a token in it.
+
+```sh
+wngmn --serve --listen
+```
+
+**Everything at once**, which is a realistic setup for a call on an app outside the default
+scope:
+
+```sh
+wngmn --global --serve --listen --mic \
+  --mic-device "BuiltInMicrophoneDevice" \
+  --mic-open-db -31 --ask-effort medium
+```
+
+**A bookmarkable URL** that survives restarts, instead of a new token each run. Note this
+implies `--listen`: a token only means something once the port is on the network.
+
+```sh
+wngmn --serve --token my-long-random-string
+```
+
+**A slow talker, or a noisy room.** Longer hangover waits out mid-sentence pauses; a lower
+threshold picks up a quieter caller. Defaults are 250 ms and -45 dBFS.
+
+```sh
+wngmn --serve --hangover-ms 400 --open-db -50
+```
+
+**Nothing on disk.** By default a session log is written only while the server runs.
+
+```sh
+wngmn --serve --no-log
+```
+
+**Come back after a crash**, with the transcript intact.
+
+```sh
+wngmn --serve --resume
+```
+
+**Better answers, at the cost of latency.** Effort defaults to `low` because on a live call
+latency is the binding constraint.
+
+```sh
+wngmn --serve --profile my-interview --ask-model claude-opus-5 --ask-effort high
 ```
 
 `wngmn --help` prints every flag.
+
+## Profiles
+
+A profile is one markdown file holding the material answers are built from. Without one, Ask
+has nothing but the question itself.
+
+Three headings, all optional, and only these three are read:
+
+| Section | |
+| --- | --- |
+| `## Style` | how answers should be shaped. Passed to the model verbatim. |
+| `## Context` | the substance to answer from. Be generous; it is cached after the first ask. |
+| `## Terms` | jargon the recogniser mishears, as `Canonical \| what it hears \| another` |
+
+Ordinary markdown works inside a section, `###` headings included. Only a `##` line starts a new
+section, and an unrecognised `##` heading is reported on startup rather than silently ignored.
+
+```sh
+wngmn --serve --profile interview          # resolves to ./profiles/interview.md
+wngmn --serve --profile ~/notes/board.md   # or give a path
+```
+
+Start from [profiles/TEMPLATE.md](profiles/TEMPLATE.md), or copy
+[profiles/example-interview.md](profiles/example-interview.md) and replace its contents. The
+file is re-read when it changes on disk, so you can edit it mid-call.
+
+`--profile` supersedes `--notes` rather than combining with it. Passing both currently reads
+the profile only, without a warning.
 
 ## The page
 

@@ -28,14 +28,27 @@ if [ -z "${PREFIX:-}" ]; then
         if [ -d "$candidate/wngmn.app" ]; then PREFIX="$candidate"; break; fi
     done
 fi
-PREFIX="${PREFIX:-/Applications}"
+# Falling back to a directory we cannot write to fails the install at the very last step,
+# after a full release build. Prefer /Applications, but only if it is actually writable —
+# on a managed or non-admin Mac it is not, and ~/Applications works identically for TCC.
+if [ -z "${PREFIX:-}" ]; then
+    if [ -w /Applications ]; then PREFIX="/Applications"; else PREFIX="$HOME/Applications"; fi
+fi
 
 # Likewise for the link: replace the one on $PATH instead of adding a second.
 if [ -z "${BINDIR:-}" ]; then
     existing="$(command -v wngmn || true)"
     [ -n "$existing" ] && BINDIR="$(dirname "$existing")"
 fi
-BINDIR="${BINDIR:-/usr/local/bin}"
+# Likewise: pick somewhere writable rather than defaulting to /usr/local/bin and telling the
+# user to re-run under sudo. /usr/local/bin does not exist by default on Apple Silicon and is
+# root-owned where it does; ~/.local/bin always works, at the cost of a PATH line.
+if [ -z "${BINDIR:-}" ]; then
+    for candidate in /usr/local/bin /opt/homebrew/bin "$HOME/.local/bin"; do
+        if [ -d "$candidate" ] && [ -w "$candidate" ]; then BINDIR="$candidate"; break; fi
+    done
+fi
+BINDIR="${BINDIR:-$HOME/.local/bin}"
 APP="$PREFIX/wngmn.app"
 LINK="$BINDIR/wngmn"
 
@@ -65,6 +78,18 @@ cp -R build/wngmn.app "$APP"
 echo "==> Linking $LINK"
 if mkdir -p "$BINDIR" 2>/dev/null && ln -sf "$APP/Contents/MacOS/wngmn" "$LINK" 2>/dev/null; then
     echo "    $LINK -> $APP/Contents/MacOS/wngmn"
+    # A link nothing can resolve is the same as no link. Checked against $PATH rather than
+    # assumed, because ~/.local/bin is on almost nobody's PATH by default and the symptom is
+    # a bare `wngmn` reporting command not found immediately after a successful install.
+    case ":$PATH:" in
+        *":$BINDIR:"*) ;;
+        *)
+            echo
+            echo "    NOTE  $BINDIR is not on your PATH, so \`wngmn\` will not resolve yet."
+            echo "          Add it, then restart your shell:"
+            echo "            echo 'export PATH=\"$BINDIR:\$PATH\"' >> ~/.zshrc"
+            ;;
+    esac
 else
     echo "    Could not write $BINDIR (try: sudo Scripts/install.sh, or set BINDIR)."
     echo "    Not fatal — run it directly:"

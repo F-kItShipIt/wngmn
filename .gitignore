@@ -10,5 +10,6 @@ build/
 # worth sharing, and the README points at it.
 profiles/*
 !profiles/TEMPLATE.md
+!profiles/example-interview.md
 # A private working list of open issues, not a public tracker.
 BACKLOG.md
