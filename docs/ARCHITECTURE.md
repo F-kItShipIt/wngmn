@@ -275,6 +275,12 @@ not `Sendable` and stays owned by the actor.
 
 ## The event protocol
 
+`--help` and the source call this **stage 1**: capture, transcribe, endpoint, print. Stage 2 is
+a separate downstream program — a message bank and an on-screen overlay — that consumes these
+lines rather than linking against internals. Nothing in this repository is stage 2, and stage 1
+is useful on its own. That split is the whole reason the event shape is treated as a published
+contract rather than an implementation detail.
+
 JSON Lines on stdout, one object per line. A downstream consumer reads this stream rather
 than linking against internals, so the shape is a published contract — **including key order**, which
 `JSONEncoder` does not preserve. `EventEncoder` is hand-written for that reason, and because
