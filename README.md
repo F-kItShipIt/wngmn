@@ -8,8 +8,7 @@ itself instead of waiting on the Speech framework. Audio never leaves your machi
 
 ![The wngmn page: an answer on the left, latency and the question list on the right](docs/images/page.png)
 
-<sub>An offline replay of a test fixture. The latency shown is inflated by the slowed
-playback; on a real call it lands in the 67–121 ms range.</sub>
+<sub>Replaying a recorded fixture at real speed. The latency shown is measured, not illustrative.</sub>
 
 ## Requirements
 
@@ -217,6 +216,72 @@ file is re-read when it changes on disk, so you can edit it mid-call.
 `--profile` supersedes `--notes` rather than combining with it. Passing both currently reads
 the profile only, without a warning.
 
+## Answers: bring your own key
+
+![Pressing Ask on a question and the answer streaming into the page](docs/images/ask.gif)
+
+<sub>Real speed, real API call. The two questions endpoint at 69 ms and 79 ms; the answer is
+built from the shipped example profile.</sub>
+
+Capture, transcription and endpointing are entirely local and need no account. **Ask is the
+only feature that talks to a network**, and it is off until you press the button.
+
+Set a key and it works. wngmn checks three sources, in this order, and stops at the first:
+
+| | |
+| --- | --- |
+| `ANTHROPIC_API_KEY` | a standard API key. Sent as `x-api-key`. |
+| `ANTHROPIC_AUTH_TOKEN` | an OAuth access token. Sent as a bearer token. |
+| `ant auth login` | the profile written by the Claude CLI, read by shelling out to it. This is how a Claude subscription is reached rather than pay-as-you-go billing. |
+
+```sh
+# Get a key from https://console.anthropic.com/settings/keys
+echo 'export ANTHROPIC_API_KEY=sk-ant-...' >> ~/.zshrc
+exec zsh
+```
+
+An exported-but-empty variable counts as absent, not as a bad key, because a half-written
+shell profile is the usual cause and a 401 is a much worse error message than "no credentials".
+
+You do not have to wait until the call to find out. With `--serve`, a run with no usable
+credential says so at startup:
+
+```
+wngmn: no Anthropic credentials, so Ask will fail on every question.
+wngmn: set ANTHROPIC_API_KEY, or run `ant auth login`, before the call.
+```
+
+### Choosing the model
+
+```sh
+wngmn --serve --ask-model claude-opus-5 --ask-effort low
+```
+
+Effort takes `low`, `medium`, `high`, `xhigh` or `max`, and defaults to **low** on purpose: on
+a live call the answer is useless if it arrives after you needed it, so latency is the binding
+constraint rather than depth. Raise it when rehearsing, not mid-interview.
+
+### What a single Ask sends
+
+The question, up to six preceding questions, and your profile go to
+`https://api.anthropic.com/v1/messages`. The answer streams back token by token, so the page
+fills in as it is generated rather than after it finishes.
+
+Your profile is identical on every ask in a session and the question is not, so the profile is
+sent behind a cache breakpoint. The first ask pays for it; later ones read it from cache. This
+is why a long `## Context` costs far less than its size suggests, and why being generous with
+it is the right instinct.
+
+### Cost, and the one switch that changes it
+
+One Ask is one API call. The **prefetch** toggle in the page header changes the economics
+completely: it answers every caller question the moment it lands, including every question you
+would never have pressed the button for. It exists because it moves the round trip behind your
+decision to press rather than in front of it, making Ask feel instant. It is off by default
+because most questions in a call do not need an answer, and you pay for all of them.
+
+Questions from your own microphone are never prefetched, so `--mic` does not double the bill.
+
 ## The page
 
 Embedded in the binary, fetches nothing, works offline. It is what you look at for the whole call.
@@ -259,6 +324,11 @@ imply `--serve`; `--mic-device` implies `--mic`. `--profile` supersedes `--notes
 ## Output
 
 JSON Lines on stdout, one object per line. Diagnostics go to stderr, so a pipe stays clean.
+
+![Partials building word by word, then an endpointed question with its latency](docs/images/cli.gif)
+
+<sub>`wngmn offline … --speed 1 | jq -c .` — partials stream as the recogniser works, then one
+`question` event lands with its measured endpoint-to-final latency.</sub>
 
 ```json
 {"type":"question","text":"So tell me about the funding round.","t0":10.88,"t1":13.02,"ms":74}
