@@ -16,9 +16,7 @@ Needs [VHS](https://github.com/charmbracelet/vhs) and `jq`. The tape replays at 
 so the recording takes as long as the audio does and the latency in it is real. Playing it
 faster would finish sooner and report numbers that no live call would produce.
 
-## `docs/images/ask.gif` and `docs/images/page.png` — the served page
-
-These come from one capture, so the still and the animation agree with each other.
+## `docs/images/ask.gif` — the served page
 
 Not a VHS tape: VHS records a terminal, and this is a browser. It is a Playwright screenshot
 loop instead, driven against a live server.
@@ -78,8 +76,6 @@ ffmpeg -framerate 4 -i /tmp/frames/f%04d.png \
 ffmpeg -framerate 4 -i /tmp/frames/f%04d.png -i /tmp/pal.png \
     -lavfi "scale=1180:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=3" \
     -y docs/images/ask.gif
-
-cp "$(ls /tmp/frames/*.png | tail -1)" docs/images/page.png
 ```
 
 ## What is deliberately not shown
