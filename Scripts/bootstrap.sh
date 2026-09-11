@@ -80,8 +80,13 @@ tar -xzf "$work/src.tar.gz" -C "$work" || die "the download was not a readable t
 
 # GitHub names the extracted directory <repo>-<ref>, and a ref with a slash in it becomes a
 # name we cannot predict. Find it rather than reconstruct it.
-src="$(find "$work" -maxdepth 1 -type d -name 'wngmn-*' | head -1)"
-[ -n "$src" ] && [ -f "$src/Package.swift" ] || die "the tarball did not contain a wngmn checkout."
+#
+# -mindepth 1 is load-bearing: find yields its own starting directory first, and $work is
+# itself named wngmn-install.XXXXXX, so without it the glob matched the temp directory and
+# every install died reporting a checkout that had in fact extracted perfectly.
+src="$(find "$work" -mindepth 1 -maxdepth 1 -type d -name 'wngmn-*' | head -1)"
+[ -n "$src" ] || die "the tarball extracted no wngmn-* directory (contents: $(find "$work" -mindepth 1 -maxdepth 1 -exec basename {} \; | tr '\n' ' '))."
+[ -f "$src/Package.swift" ] || die "extracted $src but it has no Package.swift."
 
 # ---------------------------------------------------------------- uninstall
 #
