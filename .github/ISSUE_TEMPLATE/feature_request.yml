@@ -1,0 +1,32 @@
+name: Feature request
+description: Propose a change to how wngmn senses, shows or answers.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: >
+        What went wrong in a real interview, or would. Concrete beats general — "the endpointer
+        split a question at a 500 ms hesitation" is actionable, "better endpointing" is not.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would change
+      description: The behaviour you want, and what you would give up for it.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Constraints this respects
+      description: >
+        Audio is transcribed on-device and never leaves the machine; the package has no
+        third-party dependencies. A proposal that breaks either needs to say why it is worth it.
+      options:
+        - label: No audio or transcript leaves the machine
+        - label: No third-party package dependency

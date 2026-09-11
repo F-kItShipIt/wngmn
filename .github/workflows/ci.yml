@@ -1,0 +1,77 @@
+# Build and test on a hosted macOS 26 runner.
+#
+# The runner label is forced by the package: Package.swift declares
+# platforms: [.macOS(.v26)], so nothing on an older image compiles at all.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # The image's default Xcode is the one that supplies swift-tools-version 6.2 and the
+      # macOS 26 SDK. Printed rather than pinned: a path like /Applications/Xcode_26.1.app
+      # breaks the day the image bumps its point release, and a wrong-toolchain failure is
+      # legible from this line anyway.
+      - name: Toolchain
+        run: |
+          xcode-select -p
+          swift --version
+
+      # There are no dependencies to resolve, so this is a cold compile of our own code only.
+      # Warnings are errors in Package.swift; a warning fails here.
+      - name: Build
+        run: swift build -c release
+
+      # Node gates most of the page tests: 76 of the 81 tests in PageTests.swift carry
+      # `.enabled(if: PageTests.nodeIsAvailable)`, which shells out to `node --version` and
+      # reports false if that fails. A missing Node therefore skips them, and a skip is
+      # indistinguishable from a pass in the summary line — the job would go green having
+      # checked almost nothing about the page. Fail here instead, where the reason is legible.
+      # The macOS images ship Node, so this firing means the image changed under us.
+      - name: Node present
+        run: |
+          node --version || {
+            echo "::error::node is not on PATH; 76 of the 81 page tests would skip silently"
+            exit 1
+          }
+
+      # Four suites drive the real on-device recogniser over recorded speech, and a clean
+      # runner has no en-US speech model installed. `wngmn install-model` would fetch one, but
+      # that is a 396 MB Apple asset download on every run that can fail for reasons unrelated
+      # to the change under test, so those suites are skipped rather than installed. They do
+      # not skip themselves when the model is missing — they fail — so the list has to name
+      # each one: OfflinePipelineTests and the two suites that share its file and call its
+      # `run` helper (ContinuationWindowTests, HangoverPauseTests), plus
+      # TranscriberTimelineTests, which builds a Transcriber directly. The pure suite in that
+      # last file, MicIdleAdvanceTests, needs no model and deliberately still runs.
+      # Everything else — the endpointer, text repair, the ring buffer, the event protocol,
+      # the HTTP/SSE server and the page, the Claude client — needs neither the model nor any
+      # audio permission, which is what keeps most of the suite runnable here at all.
+      # Run the full `swift test` locally before opening a pull request.
+      - name: Test
+        run: |
+          swift test \
+            --skip OfflinePipelineTests \
+            --skip ContinuationWindowTests \
+            --skip HangoverPauseTests \
+            --skip TranscriberTimelineTests
+
+      # `selftest` plays a tone and asserts the tap hears it. It cannot run here: System Audio
+      # Recording is a TCC grant to the launching process and there is nobody to approve the
+      # prompt, and a denial returns noErr from every Core Audio call, so a "passing" selftest
+      # on a runner would mean nothing. That tier stays manual, on a real machine.

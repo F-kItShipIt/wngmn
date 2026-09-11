@@ -1,0 +1,49 @@
+name: Rehearsal report, measurement or question
+description: What happened on a real call, a number that contradicts something written here, or a question about the design.
+labels: [report]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For anything that is not a defect and not a proposal. Nothing here asks for a fix,
+        and no patch is expected. The live-rehearsal tier is not automatable — a real call,
+        on a machine with a real permission grant, is the only thing that exercises TCC,
+        a device change mid-call and genuine conversational speech — so a report of one is
+        evidence nobody can produce from the test suite.
+
+        Please do not paste transcript text, your notes file, or anything a journalist said.
+        Redact question text to `[redacted]`; the timings and flags around it are the part
+        that carries information.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What you did and what you observed
+      description: >
+        For a rehearsal: which conferencing app, which input and output devices, how long the
+        call ran, and what you were watching for. For a measurement: what you measured, over
+        what recording or call, and how. For a question: what you were trying to work out.
+      placeholder: |
+        45 minutes on a real call, headset in, speakers out, route changed once mid-call when
+        the headset dropped. Capture recovered in about two seconds; the pill went amber and
+        back to green, and no question was lost across the gap.
+    validations:
+      required: true
+
+  - type: textarea
+    id: numbers
+    attributes:
+      label: The numbers, if you have them
+      description: >
+        The defaults here were measured rather than guessed — the 250 ms hangover exists
+        because a mid-sentence pause measures 530 ms on the test recording and two separate
+        questions measure 1.2 s apart. A measurement that contradicts one of those is worth
+        more than an opinion about it, so give the figure and what produced it.
+      render: text
+
+  - type: input
+    id: build
+    attributes:
+      label: Build and machine
+      description: "`sw_vers -productVersion` and the Mac model, plus the commit you were running."
+      placeholder: 26.2, M2 MacBook Pro, commit 25451e4

@@ -1,0 +1,14 @@
+.DS_Store
+.build/
+# The built binary at the repo root only. Unanchored, this also matched
+# Sources/wngmn/, which kept the entire executable target out of git.
+/wngmn
+*.pcm
+.playwright-mcp/
+build/
+# Profiles hold prepared material for real calls. The blank template is the one file
+# worth sharing, and the README points at it.
+profiles/*
+!profiles/TEMPLATE.md
+# A private working list of open issues, not a public tracker.
+BACKLOG.md

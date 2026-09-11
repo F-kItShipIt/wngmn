@@ -1,0 +1,69 @@
+name: Bug report
+description: Something wngmn did wrong — silence, a missed question, a bad endpoint, a crash.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not paste transcript text, your notes file, or anything a journalist said.
+        Those are private, and the diagnostics below are enough. Redact question text to
+        `[redacted]` where it appears — the timings and flags around it are what matter.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you expected, and what happened instead. Include the command you ran.
+      placeholder: |
+        Ran `wngmn --serve`. The page showed a green "capturing" pill for the whole call but
+        no questions ever appeared.
+    validations:
+      required: true
+
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      description: "`sw_vers -productVersion`, plus the Mac model."
+      placeholder: 26.2, M2 MacBook Pro
+    validations:
+      required: true
+
+  - type: dropdown
+    id: launch
+    attributes:
+      label: How did you launch it
+      description: >
+        This decides who holds the System Audio Recording grant — the terminal app, or the
+        bundle's own identity — and it is the most common cause of silent capture.
+      options:
+        - From a shell (terminal app holds the grant)
+        - The .app bundle built by Scripts/install.sh
+        - Other (say so below)
+    validations:
+      required: true
+
+  - type: textarea
+    id: selftest
+    attributes:
+      label: Output of `wngmn selftest`
+      description: Run it by path (`./.build/release/wngmn selftest`) so it is the build you are reporting on.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: jsonl
+    attributes:
+      label: Relevant JSON Lines from stdout
+      description: >
+        The `status`, `warning` and `question` lines around the problem. Replace the `text`
+        field of any question with `[redacted]`; keep `t0`, `t1`, `ms`, `revises`, `volatile`.
+      render: json
+
+  - type: textarea
+    id: stderr
+    attributes:
+      label: stderr diagnostics
+      description: Diagnostics go to stderr, so capture it separately — `wngmn 2>err.log`.
+      render: text
