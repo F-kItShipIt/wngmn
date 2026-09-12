@@ -96,6 +96,32 @@ ffmpeg -i phone-transcript.png -i phone-answer.png \
 The URL and token printed in the README's phone section are illustrative, not the ones from
 this machine.
 
+## `docs/images/use-*.gif` — one per profile
+
+Three runs of the same pipeline against `profiles/hiring.md`, `profiles/investor.md` and
+`profiles/technical.md`, to show that the answer follows the profile and nothing else.
+
+The questions are synthesised with `say`, because no fixture in the repo asks about a burn
+rate. Pick the wording carefully: the recogniser reads synthetic speech well but not
+perfectly, and "after the raise" came back as "after the race", "traffic tripled" as "traffic
+trickled", and "the write path" as "the right path". Those are artefacts of the synthetic
+voice rather than errors a real speaker would provoke, so the question was reworded until it
+transcribed clean rather than papered over with a `## Terms` entry.
+
+```sh
+say -v Samantha -o q.wav --data-format=LEI16@16000 "Tell me about a time you disagreed with your manager."
+```
+
+Pad with two seconds of lead-in and a long tail (as above), serve each on its own port at
+`--speed 1`, then run the same screenshot loop at 1280x600 and assemble at 900 px wide. One
+real Claude call per GIF.
+
+## `docs/images/logo.svg`, `logo-dark.svg` — the mark
+
+Hand-written SVG, two colour variants, referenced from the README through a `<picture>` so
+GitHub swaps them with the reader's theme. A single-colour PNG would vanish against one of
+the two backgrounds. Preview a change with `qlmanage -t -s 420 -o . docs/images/logo.svg`.
+
 ## What is deliberately not shown
 
 There is no recording of the two-speaker transcript, the one where lines are labelled Caller

@@ -11,5 +11,8 @@ build/
 profiles/*
 !profiles/TEMPLATE.md
 !profiles/example-interview.md
+!profiles/hiring.md
+!profiles/investor.md
+!profiles/technical.md
 # A private working list of open issues, not a public tracker.
 BACKLOG.md

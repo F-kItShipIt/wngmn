@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/logo-dark.svg">
+  <img src="docs/images/logo.svg" alt="wngmn" width="112">
+</picture>
+
 # wngmn
 
 [![CI](https://img.shields.io/github/actions/workflow/status/skhan75/wngmn/ci.yml?branch=main&label=CI&style=flat-square)](https://github.com/skhan75/wngmn/actions/workflows/ci.yml)
@@ -184,6 +189,24 @@ Kubernetes | cooper netties | goober netties
 ```
 
 `--profile name` looks up `./profiles/name.md`; any path works. Edit it mid-call, it's re-read on every save. Vague profile, vague answers. Start from [profiles/TEMPLATE.md](profiles/TEMPLATE.md) or steal [profiles/example-interview.md](profiles/example-interview.md).
+
+## Three profiles, three answers
+
+Same binary, same question format. Only `## Context` changed.
+
+**Hiring** · `--profile hiring` · *"Tell me about a time you disagreed with your manager."*
+
+![Hiring interview: the disagreement story, straight from the profile](docs/images/use-hiring.gif)
+
+**Investor** · `--profile investor` · *"What does your burn rate look like now?"*
+
+![Investor call: burn and runway, only the numbers that are in the file](docs/images/use-investor.gif)
+
+**Technical** · `--profile technical` · *"How does the ledger handle a retry?"*
+
+![Technical deep-dive: idempotency keys, your architecture in your words](docs/images/use-technical.gif)
+
+All three ship in [`profiles/`](profiles). Copy one, swap the contents, keep the headings.
 
 ## Ask, and your own key
 
