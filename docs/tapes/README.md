@@ -116,11 +116,21 @@ Pad with two seconds of lead-in and a long tail (as above), serve each on its ow
 `--speed 1`, then run the same screenshot loop at 1280x600 and assemble at 900 px wide. One
 real Claude call per GIF.
 
-## `docs/images/logo.svg`, `logo-dark.svg` — the mark
+## `docs/images/logo.png`, `logo-dark.png` — the mark
 
-Hand-written SVG, two colour variants, referenced from the README through a `<picture>` so
-GitHub swaps them with the reader's theme. A single-colour PNG would vanish against one of
-the two backgrounds. Preview a change with `qlmanage -t -s 420 -o . docs/images/logo.svg`.
+Supplied artwork, not generated here. Two variants of the same design: dark ink for light
+backgrounds, light ink for dark ones, referenced from the README through a `<picture>` so
+GitHub swaps them with the reader's theme. Either one alone disappears against one of the two.
+
+Both are cropped to the *union* of their alpha bounding boxes, so the two files line up exactly
+when the theme flips:
+
+```sh
+ffmpeg -i original.png -vf "crop=900:560:135:417,scale=-1:220:flags=lanczos" -y logo.png
+```
+
+The source images were 1254x1254 with the mark floating in the middle; uncropped, the padding
+makes it impossible to sit the logo on the same line as the title.
 
 ## What is deliberately not shown
 
