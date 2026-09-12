@@ -81,6 +81,27 @@ No call handy? From a clone, run a recording through the pipeline; no audio perm
 wngmn offline Tests/WngmnAudioTests/Fixtures/two-questions.wav --serve --profile profiles/example-interview.md
 ```
 
+## On your phone, during the interview
+
+The page is meant to be read from a phone propped just under your webcam. Your eyes stay near the lens, and the prompt is on a screen nobody else can see.
+
+```sh
+wngmn --listen --profile me.md
+```
+
+```
+wngmn: live transcript → http://192.168.1.20:7373/?t=4fq8zj2m
+wngmn:                    → http://your-mac.local:7373/?t=4fq8zj2m   (same page, stable name)
+```
+
+Open either URL on the phone. The token is the only thing guarding the transcript on your network. It is the same every run, so bookmark it once; `--new-token` retires it.
+
+<img src="docs/images/phone.png" alt="Left: the Transcript tab, two questions with their latency and an Ask on each. Right: the Answer tab after asking, with the caption's button now reading View" width="720">
+
+Below 820 px the page stops splitting and gives you two tabs. **Transcript** is every question so far, each with the milliseconds it took to land and its own Ask, and a badge counting the ones you haven't looked at. **Answer** is where the reply streams in. The live caption sits under both, so you watch a question form before it has a row, with an Ask beside it aimed at the newest one. Once that question has an answer the button reads **View** instead, since a second tap would only bring the same answer back. The diagnostics panel never comes to the phone: a phone can't fix a capture problem, so the chart and the warnings stay on the Mac.
+
+In the room it goes like this. They ask. The caption fills in as they speak. About 75 ms after they stop, the row lands. Tap Ask, the page switches to Answer on its own, and a reply in your voice is already streaming by the time you've finished saying "good question." Read it, look up, say it your way. If you'd rather never wait, the **prefetch** toggle asks every caller question the moment it lands, at one API call each. If the laptop is open too, **sync** keeps both screens on the same row, laptop leading, phone following or not. Rotate the phone and the layout re-renders rather than stranding you on the wrong one. If wngmn dies mid-call, `wngmn --resume` restores the session and the open page reconnects by itself.
+
 ## Examples
 
 The everyday one.

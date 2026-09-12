@@ -78,6 +78,24 @@ ffmpeg -framerate 4 -i /tmp/frames/f%04d.png -i /tmp/pal.png \
     -y docs/images/ask.gif
 ```
 
+## `docs/images/phone.png` — the page at phone width
+
+Same server as the GIF, started with `--listen` instead of `--serve` so the capture uses the
+token URL a phone would. Viewport 390x844, which is below the 820 px breakpoint where the
+page swaps the split layout for two tabs.
+
+Two screenshots: the **Transcript** tab once both questions have landed, then the **Answer**
+tab after tapping Ask on one of them (the page switches tabs on its own). Composited side by
+side with a 28 px white gutter:
+
+```sh
+ffmpeg -i phone-transcript.png -i phone-answer.png \
+    -filter_complex "[0]pad=iw+28:ih:0:0:color=0xffffff[a];[a][1]hstack" -y docs/images/phone.png
+```
+
+The URL and token printed in the README's phone section are illustrative, not the ones from
+this machine.
+
 ## What is deliberately not shown
 
 There is no recording of the two-speaker transcript, the one where lines are labelled Caller
