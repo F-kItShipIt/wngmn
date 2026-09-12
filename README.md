@@ -15,10 +15,19 @@ wngmn runs on your Mac alongside Zoom or Meet, transcribes the caller's question
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/skhan75/wngmn/main/Scripts/bootstrap.sh | bash
+git clone https://github.com/skhan75/wngmn.git && cd wngmn
+Scripts/install.sh
 ```
 
 Builds from source, installs wngmn.app, puts `wngmn` on your PATH. No sudo.
+
+Shortcut, same result. `Scripts/bootstrap.sh` is 142 lines; read it before you pipe it.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/skhan75/wngmn/main/Scripts/bootstrap.sh | bash
+```
+
+Then:
 
 ```sh
 wngmn install-model --locale en-US    # 396 MB speech model from Apple. Required.
@@ -29,11 +38,12 @@ export ANTHROPIC_API_KEY=sk-ant-...   # only Ask needs it. Put it in your shell 
 If `selftest` fails, grant System Audio Recording: [docs/PERMISSIONS.md](docs/PERMISSIONS.md).
 
 <details>
-<summary>Manual install, uninstall</summary>
+<summary>Pin a version, uninstall</summary>
 
 ```sh
-git clone https://github.com/skhan75/wngmn.git && cd wngmn && Scripts/install.sh
-curl -fsSL https://raw.githubusercontent.com/skhan75/wngmn/main/Scripts/bootstrap.sh | bash -s -- --uninstall
+git checkout v0.1.0 && Scripts/install.sh                 # from a clone
+curl -fsSL https://raw.githubusercontent.com/skhan75/wngmn/main/Scripts/bootstrap.sh | WNGMN_REF=v0.1.0 bash
+Scripts/install.sh --uninstall
 ```
 
 No prebuilt binary; build from source.
