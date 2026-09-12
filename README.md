@@ -8,9 +8,7 @@
 
 A teleprompter for the half of the conversation you can't script.
 
-wngmn runs on your Mac beside Zoom or Meet, transcribes the caller's question on the machine, and puts it on a page. Tap Ask and Claude drafts a reply in your voice from a profile you wrote. The answer is on your phone before the silence gets awkward. wngmn is not trying to join your meeting. It is already sitting next to you.
-
-Job interviews, podcasts, press calls, the board review that moved up a week: if you're the one being asked, it counts. It won't make you smarter. It makes sure the answer you already had shows up on time, not an hour later in the shower.
+wngmn runs on your Mac alongside Zoom or Meet, transcribes the caller's question on the machine, and puts it on your phone. Tap Ask and Claude drafts a reply from your profile. wngmn is not trying to join your meeting. It is already sitting next to you.
 
 ![Question lands, Ask pressed, answer streams](docs/images/ask.gif)
 
@@ -20,62 +18,56 @@ Job interviews, podcasts, press calls, the board review that moved up a week: if
 curl -fsSL https://raw.githubusercontent.com/skhan75/wngmn/main/Scripts/bootstrap.sh | bash
 ```
 
-Builds from source, installs wngmn.app, links `wngmn` onto your PATH. A few minutes, no sudo.
-
-Next, the speech model, 396 MB from Apple. Without it a run stops immediately, which beats transcribing silence.
+Builds from source, installs wngmn.app, puts `wngmn` on your PATH. No sudo.
 
 ```sh
-wngmn install-model --locale en-US
+wngmn install-model --locale en-US    # 396 MB speech model from Apple. Required.
+wngmn selftest                        # plays a tone, confirms the audio tap works
+export ANTHROPIC_API_KEY=sk-ant-...   # only Ask needs it. Put it in your shell profile.
 ```
 
-Then let it check its hearing. It plays a tone and confirms the tap heard it. If macOS denied System Audio Recording, Core Audio reports success and delivers silence, and nothing else notices.
-
-```sh
-wngmn selftest
-```
-
-Last, a key. Only Ask needs it.
-
-```sh
-export ANTHROPIC_API_KEY=sk-ant-...   # in your shell profile
-```
+If `selftest` fails, grant System Audio Recording: [docs/PERMISSIONS.md](docs/PERMISSIONS.md).
 
 <details>
-<summary>Manual install, uninstall, no download</summary>
+<summary>Manual install, uninstall</summary>
 
 ```sh
 git clone https://github.com/skhan75/wngmn.git && cd wngmn && Scripts/install.sh
-```
-
-```sh
 curl -fsSL https://raw.githubusercontent.com/skhan75/wngmn/main/Scripts/bootstrap.sh | bash -s -- --uninstall
 ```
 
-No prebuilt binary: the bundle is ad-hoc signed, so a downloaded copy is quarantined and quietly loses its microphone entitlement. Copying the bare binary to /usr/local/bin skips the app bundle and breaks permissions.
+No prebuilt binary; build from source.
 
 </details>
 
 ## Quick start
 
-Phone in hand, Mac on the call: wngmn binds to your LAN and prints a URL with a token in it. Open it on the phone. `--listen` implies `--serve`.
+**1. Write a profile.** Format is below. Save it as `me.md`.
+
+**2. Start wngmn before the call.**
 
 ```sh
 wngmn --listen --profile me.md
 ```
 
-Just the Mac? `--serve` puts the page at http://127.0.0.1:7373, loopback only. `--profile` alone starts no page.
+**3. Open the printed URL on your phone.** Bookmark it.
 
-```sh
-wngmn --serve --profile me.md
+```
+wngmn: live transcript → http://192.168.1.20:7373/?t=4fq8zj2m
+wngmn:                    → http://your-mac.local:7373/?t=4fq8zj2m   (same page, stable name)
 ```
 
-Closed the terminal mid-call? `--resume` continues the most recent session from disk. It never happens on its own; you have to ask.
+**4. Prop the phone under your webcam and join the call.**
+
+Page on the Mac instead: `wngmn --serve --profile me.md`, then http://127.0.0.1:7373.
+
+Process died mid-call:
 
 ```sh
 wngmn --resume
 ```
 
-No call handy? From a clone, run a recording through the pipeline; no audio permission needed.
+No call handy? From a clone of the repo:
 
 ```sh
 wngmn offline Tests/WngmnAudioTests/Fixtures/two-questions.wav --serve --profile profiles/example-interview.md
@@ -83,47 +75,30 @@ wngmn offline Tests/WngmnAudioTests/Fixtures/two-questions.wav --serve --profile
 
 ## On your phone, during the interview
 
-The page is meant to be read from a phone propped just under your webcam. Your eyes stay near the lens, and the prompt is on a screen nobody else can see.
+<img src="docs/images/phone.png" alt="Left: the Transcript tab. Right: the Answer tab after asking" width="720">
 
-```sh
-wngmn --listen --profile me.md
-```
-
-```
-wngmn: live transcript → http://192.168.1.20:7373/?t=4fq8zj2m
-wngmn:                    → http://your-mac.local:7373/?t=4fq8zj2m   (same page, stable name)
-```
-
-Open either URL on the phone. The token is the only thing guarding the transcript on your network. It is the same every run, so bookmark it once; `--new-token` retires it.
-
-<img src="docs/images/phone.png" alt="Left: the Transcript tab, two questions with their latency and an Ask on each. Right: the Answer tab after asking, with the caption's button now reading View" width="720">
-
-Below 820 px the page stops splitting and gives you two tabs. **Transcript** is every question so far, each with the milliseconds it took to land and its own Ask, and a badge counting the ones you haven't looked at. **Answer** is where the reply streams in. The live caption sits under both, so you watch a question form before it has a row, with an Ask beside it aimed at the newest one. Once that question has an answer the button reads **View** instead, since a second tap would only bring the same answer back. The diagnostics panel never comes to the phone: a phone can't fix a capture problem, so the chart and the warnings stay on the Mac.
-
-In the room it goes like this. They ask. The caption fills in as they speak. About 75 ms after they stop, the row lands. Tap Ask, the page switches to Answer on its own, and a reply in your voice is already streaming by the time you've finished saying "good question." Read it, look up, say it your way. If you'd rather never wait, the **prefetch** toggle asks every caller question the moment it lands, at one API call each. If the laptop is open too, **sync** keeps both screens on the same row, laptop leading, phone following or not. Rotate the phone and the layout re-renders rather than stranding you on the wrong one. If wngmn dies mid-call, `wngmn --resume` restores the session and the open page reconnects by itself.
+- **Transcript tab.** Every question, its latency, an Ask on each. The badge counts questions you haven't looked at.
+- **Answer tab.** The reply streams here. Asking switches you to it.
+- **Live caption**, bottom of the screen. The question forming as they speak. Its Ask targets the newest question, and reads **View** once that question has an answer.
+- **prefetch.** Answers every caller question as it lands, one API call each. Off by default.
+- **sync.** Keeps the laptop and the phone on the same row.
 
 ## Examples
 
-The everyday one.
-
-```sh
-wngmn --serve --profile me.md
-```
-
-Both sides, labelled Caller and You. Assumes headphones.
+Both sides, labelled Caller and You. Wear headphones.
 
 ```sh
 wngmn --serve --mic --profile me.md
 ```
 
-A specific input, threshold measured instead of guessed: `miccheck` listens to the room and prints the `--mic-open-db` value. `--mic-device` implies `--mic`.
+Pick the input and measure the threshold. `--mic-device` implies `--mic`.
 
 ```sh
 wngmn miccheck
 wngmn --serve --mic-device "BuiltInMicrophoneDevice" --mic-open-db -31 --profile me.md
 ```
 
-An app that isn't Zoom or Chrome, or just one of them. Run `devices` during the call to find its bundle ID; conferencing apps rarely emit audio from the obvious process. `--bundle-id` repeats, and replaces the defaults.
+An app that isn't Zoom or Chrome. Run `devices` during the call to find its bundle ID.
 
 ```sh
 wngmn devices                                          # while the call is running
@@ -136,37 +111,25 @@ Everything the Mac plays, music included.
 wngmn --global --serve --profile me.md
 ```
 
-Page on your phone.
-
-```sh
-wngmn --listen --profile me.md
-```
-
-A bookmark that survives restarts. Implies `--listen`; `--new-token` replaces it.
+A URL that survives restarts. Implies `--listen`; `--new-token` replaces it.
 
 ```sh
 wngmn --token my-long-fixed-token --profile me.md
 ```
 
-Slow talker, or noisy room? Wait longer before calling a question done, or raise the speech threshold above the hum. Defaults: 250 ms hangover, -45 dBFS open, 700 ms merge.
+Slow talker or noisy room. Defaults: 250 ms hangover, -45 dBFS open, 700 ms merge.
 
 ```sh
 wngmn --serve --hangover-ms 400 --open-db -38 --merge-ms 900 --profile me.md
 ```
 
-No transcript on disk.
+Nothing written to disk.
 
 ```sh
 wngmn --serve --no-log --profile me.md
 ```
 
-Back into the last session.
-
-```sh
-wngmn --resume
-```
-
-More thinking, or another model. Defaults: claude-opus-5, low effort.
+More thinking, or another model. Defaults: `claude-opus-5`, `low`.
 
 ```sh
 wngmn --serve --ask-model claude-opus-5 --ask-effort medium --profile me.md
@@ -180,13 +143,11 @@ wngmn --global --serve --listen --mic --mic-device "BuiltInMicrophoneDevice" --m
 
 ## Your profile
 
-A markdown file. Exactly three `##` headings are read:
+Three `##` headings are read. Any other `##` is reported at startup and ignored.
 
-- `## Style`: how answers are shaped. Sent verbatim.
-- `## Context`: the material. Be generous; it's cached.
-- `## Terms`: jargon the recogniser mishears, one per line: `Canonical | what it hears | another`.
-
-A `# Title` at the top is just a display name. Any other `##` heading is reported at startup and ignored, so don't hide your best story under `## Notes`. `###` and tables inside a section are fine.
+- `## Style`: how answers should sound.
+- `## Context`: what answers are built from. Be generous.
+- `## Terms`: words the recogniser mishears, one per line: `Canonical | what it hears | another`.
 
 ```markdown
 # Me, for interviews
@@ -208,17 +169,15 @@ Don't mention that I've never actually read the Kubernetes docs.
 Kubernetes | cooper netties | goober netties
 ```
 
-A bare `--profile name` means `./profiles/name.md`; a path works too. Re-read on change, so edit mid-call. The repo ships `profiles/TEMPLATE.md` and `profiles/example-interview.md`.
+`--profile name` resolves to `./profiles/name.md`; a path works too. Edit it mid-call; it's re-read on change. Start from [profiles/TEMPLATE.md](profiles/TEMPLATE.md) or [profiles/example-interview.md](profiles/example-interview.md).
 
 ## Ask, and your own key
 
-Only Ask needs a credential. Order: `ANTHROPIC_API_KEY`, then `ANTHROPIC_AUTH_TOKEN` (OAuth), then the profile `ant auth login` writes (the Claude CLI, so a subscription works). An empty exported variable counts as absent. With none, startup warns: `wngmn: no Anthropic credentials, so Ask will fail on every question.`
+Checked in order: `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, then `ant auth login`. With none set, startup prints `wngmn: no Anthropic credentials, so Ask will fail on every question.`
 
-`--ask-effort`: low, medium, high, xhigh, or max. Default low, because you're on a call and slow is wrong.
-
-A prefetch toggle on the page asks every caller question as it lands, one API call each. Off by default; mic lines never prefetch.
-
-One Ask sends the question, up to six lines before it, and your profile to api.anthropic.com, then streams the answer back; the profile is cached after the first.
+- `--ask-effort low|medium|high|xhigh|max`. Default `low`.
+- `--ask-model`, default `claude-opus-5`.
+- One Ask sends the question, up to six before it, and your profile to api.anthropic.com.
 
 ## How it works
 
@@ -227,35 +186,33 @@ Zoom / Chrome ─tap─▶ endpointer ─▶ SpeechAnalyzer ─▶ page ─Ask�
   (its audio)       (RMS, 250 ms)   (on-device)      (phone)     (text, on click)
 ```
 
-A Core Audio process tap scoped by bundle ID captures the meeting app's own output: not your mic, not other apps, unless `--global`. An RMS endpointer marks where speech starts and stops; a pause shorter than the merge window is a hesitation, stitched on and re-emitted with `revises`. At the endpoint wngmn forces the recogniser to finalise instead of waiting for `isFinal`: about 75 ms endpoint to event (measured 57 to 90) against about 900. The page is embedded in the binary and fetches nothing.
+Detail in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Output
 
 ![Partials build word by word, then a question event with its latency](docs/images/cli.gif)
 
-JSON Lines on stdout, diagnostics on stderr:
+JSON Lines on stdout, diagnostics on stderr.
 
 ```json
 {"type":"question","text":"So tell me about the funding round.","t0":0.51,"t1":2.38,"ms":57}
 ```
 
-`ms` is measured endpoint-to-final. `revises: true` supersedes the previous line (a mid-sentence pause). `volatile: true`: wording from the volatile stream. Also `partial`, `status`, `warning`.
+`ms` is the latency. `revises: true` replaces the previous line. `volatile: true` means less certain wording.
 
 ## Privacy
 
 What leaves the machine:
 
-- Audio: never. Memory, discarded, not recorded.
-- Ask text: to api.anthropic.com, on click.
-- The speech model: from Apple, via `install-model`.
-- The transcript: `~/Library/Application Support/wngmn/sessions/`, only while `--serve` runs; `--no-log` disables it.
-- The page: with `--listen`, on your LAN behind the URL token.
-
-That is the whole list.
+- Audio: never.
+- Ask: the question, recent questions, your profile. To api.anthropic.com, on click.
+- `install-model`: from Apple.
+- Transcript: local disk, only while `--serve` runs. `--no-log` disables it.
+- `--listen`: the page on your LAN, behind the URL token.
 
 ## Is this cheating?
 
-Your notes are a prompter. So is the second monitor with the job description on it. wngmn is the same idea with better timing. It knows only what you put in the profile, and it doesn't do the talking. You read a draft and decide, out loud, what you actually think. Some rooms ban help of any kind, and a few interviewers ask outright. Find out before you sit down.
+It's a prompter. It knows only what you put in the profile and it doesn't do the talking. Some rooms ban help and some interviewers ask. Find out before you sit down.
 
 ## What wngmn is not
 
@@ -265,13 +222,11 @@ wngmn is not a meeting recorder designed for secretly collecting conversations. 
 
 wngmn is intentionally boring in a few places. There is no framework where a few hundred lines of Swift will do. There is no cloud service where macOS already provides the capability locally. There is no database where a file will work.
 
-Zero third-party dependencies: HTTP/SSE server, argument parser, and Claude client, all hand-rolled on Apple frameworks.
-
 ## Contributing
 
 If you find a bug, open an issue. If you know why the audio pipeline behaves differently on a machine it has absolutely no reason to behave differently on, definitely open an issue. Pull requests are welcome. Keep changes focused, keep dependencies justified, and try not to turn the tiny HTTP server into Kubernetes.
 
-`swift test` runs 407 tests; four suites need the speech model. Read [CONTRIBUTING.md](CONTRIBUTING.md) first, then [architecture](docs/ARCHITECTURE.md), [permissions](docs/PERMISSIONS.md), [the page](docs/PAGE.md), [tuning](docs/TUNING.md), and [how the GIFs are made](docs/tapes/README.md). [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) applies to everyone taking part. Security reports go through GitHub private vulnerability reporting; see [SECURITY.md](SECURITY.md).
+`swift test` runs 407 tests; four suites need the speech model. Read [CONTRIBUTING.md](CONTRIBUTING.md), then [permissions](docs/PERMISSIONS.md), [the page](docs/PAGE.md), [tuning](docs/TUNING.md), [architecture](docs/ARCHITECTURE.md), [the GIFs](docs/tapes/README.md). [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) applies. Security reports: GitHub private vulnerability reporting, see [SECURITY.md](SECURITY.md).
 
 ## The name
 
