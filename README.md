@@ -6,6 +6,8 @@
   wngmn
 </h1>
 
+<sub>pronounced <b>wing-man</b></sub>
+
 [![CI](https://img.shields.io/github/actions/workflow/status/F-kItShipIt/wngmn/ci.yml?branch=main&label=CI&style=flat-square)](https://github.com/F-kItShipIt/wngmn/actions/workflows/ci.yml)
 ![macOS](https://img.shields.io/badge/macOS-26%2B-black?style=flat-square&logo=apple)
 ![Swift](https://img.shields.io/badge/Swift-6.2-orange?style=flat-square&logo=swift&logoColor=white)
