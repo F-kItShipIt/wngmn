@@ -262,6 +262,28 @@ CI is the floor. It cannot tell you that a tap stopped clocking, so say what you
 * [docs/PAGE.md](docs/PAGE.md) — the served page, which has more behaviour in it than any
   other single file.
 
+## How a change reaches main
+
+`main` is protected. Nothing lands on it except through a pull request that CI has passed, and
+the branch has to be current with `main` before it can merge. Force pushes and branch deletion
+are refused outright. The maintainer can push directly and does for documentation, which is the
+one exception and not an invitation to ask for it.
+
+You do not need write access, and you will not be given it to open a pull request:
+
+```sh
+gh repo fork F-kItShipIt/wngmn --clone && cd wngmn
+git checkout -b what-it-does
+# ... work, and run swift test ...
+git push -u origin what-it-does
+gh pr create --repo F-kItShipIt/wngmn
+```
+
+Merges are squashed, so the branch becomes one commit on `main` and history stays linear. Your
+branch is deleted automatically once it merges. Review comments have to be resolved before the
+merge button lights up. CI on a first-time contributor's pull request waits for a maintainer to
+approve the run, because a pull request can edit the workflow that runs it.
+
 ## What a good pull request looks like
 
 * **One change.** A fix to the endpointer and a tidy-up of the page are two pull requests.
