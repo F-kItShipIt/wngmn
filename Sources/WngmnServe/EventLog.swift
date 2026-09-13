@@ -107,11 +107,21 @@ public final class EventLog: Sendable {
         if let size = try? file.offset(), size > 0 {
             try? file.seek(toOffset: max(0, size - 1))
             if (try? file.read(upToCount: 1)) != Data("\n".utf8) {
-                let text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
-                let keep = text.lastIndex(of: "\n").map {
-                    text.distance(from: text.startIndex, to: $0) + 1
-                } ?? 0
-                try? file.truncate(atOffset: UInt64(Data(text.prefix(keep).utf8).count))
+                // Scanned as bytes. This used to decode the whole file as UTF-8 and fall back
+                // to "" when that failed, which set the keep length to zero and truncated the
+                // file to nothing. The fallback fires on exactly the input this repair exists
+                // for: a power loss mid-append can stop inside a multi-byte character, and a
+                // file ending in half an em dash is not valid UTF-8. A transcript of any size
+                // was destroyed by the code meant to salvage its last line, and on the
+                // `--resume` path the file belongs to an earlier run. A newline is one byte
+                // and can never be part of another character, so finding it needs no decoding.
+                //
+                // An unreadable file is left alone rather than treated as empty: nothing is
+                // worth truncating on the strength of a read that did not work.
+                if let data = try? Data(contentsOf: url) {
+                    let keep = data.lastIndex(of: UInt8(ascii: "\n")).map { $0 + 1 } ?? 0
+                    try? file.truncate(atOffset: UInt64(keep))
+                }
             }
             _ = try? file.seekToEnd()
         }

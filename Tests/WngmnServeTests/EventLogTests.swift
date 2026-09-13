@@ -259,6 +259,48 @@ struct EventLogTests {
         #expect(EventLog.mostRecentSession(in: dir)?.resolvingSymlinksInPath()
                 == log.url.resolvingSymlinksInPath())
     }
+
+    /// Found while sweeping for side effects that land before the port bind. The tail repair
+    /// decoded the whole file with `String(contentsOf:encoding:.utf8)` and fell back to `""`
+    /// when that failed. A crash mid-append can stop inside a multi-byte character, which is
+    /// exactly what makes a file invalid UTF-8 — so the fallback set `keep` to zero and
+    /// truncated an entire good transcript to nothing. On the resume path the file being
+    /// destroyed belongs to an earlier run, and `discardIfEmpty` then deletes the remains.
+    @Test("A resumed transcript that was torn mid-character keeps its finished lines")
+    func tornMultibyteTailDoesNotDestroyTheTranscript() throws {
+        let dir = scratch()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let sessions = dir.appendingPathComponent("sessions", isDirectory: true)
+        try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
+
+        // Five finished lines, then an append that died halfway through an em dash.
+        var bytes = Data()
+        for i in 1...5 {
+            bytes.append(Data(#"{"id":\#(i),"type":"question","text":"line \#(i)"}"# .utf8))
+            bytes.append(0x0A)
+        }
+        let complete = bytes.count
+        bytes.append(Data(#"{"id":6,"type":"question","text":"tore here "# .utf8))
+        bytes.append(contentsOf: [0xE2, 0x80])   // first two bytes of an em dash, no third
+
+        let file = sessions.appendingPathComponent("2026-01-01T00-00-00.jsonl")
+        try bytes.write(to: file)
+        #expect((try? String(contentsOf: file, encoding: .utf8)) == nil,
+                "the fixture has to actually be invalid UTF-8 for this to test anything")
+
+        let log = try EventLog(directory: dir, resuming: true)
+
+        let after = try Data(contentsOf: file)
+        #expect(after.count == complete,
+                "the five finished lines must survive a torn multi-byte tail")
+        #expect(log.restored.count == 5, "all five finished events should be restored")
+        #expect(log.nextID == 6)
+
+        // And the failed-bind path must not then delete somebody else's transcript.
+        log.discardIfEmpty()
+        #expect(FileManager.default.fileExists(atPath: file.path),
+                "a transcript with content in it must survive discardIfEmpty")
+    }
 }
 
 /// How often a durability sync is actually asked for.
@@ -341,4 +383,5 @@ struct SyncCoalescerTests {
         while c.takeWork() { passes += 1 }
         #expect(passes == 1, "the last append was left unsynced")
     }
+
 }
