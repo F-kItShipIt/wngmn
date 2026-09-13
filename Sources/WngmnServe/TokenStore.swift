@@ -43,13 +43,18 @@ public struct TokenStore: Sendable {
         try write(AccessToken.generateReadable())
     }
 
-    /// What this run should authenticate with, decided without writing anything.
+    /// What this run should authenticate with, decided before the server is built.
     ///
     /// Rotation is the reason this is split from `commit`. The token has to exist before the
     /// server can be built, and the server can still fail to take its port; rotating during
     /// construction meant an occupied port destroyed the bookmarked token and exited, leaving
-    /// the user with a dead bookmark and no URL to replace it. Deciding here and writing after
-    /// the bind makes a failed start leave the machine exactly as it found it.
+    /// the user with a dead bookmark and no URL to replace it. A rotation is therefore held in
+    /// memory until `commit`, so a failed bind cannot cost anyone a URL they had written down.
+    ///
+    /// One case does still write: on a machine with no token at all, `.stored` goes through
+    /// `loadOrCreate`, which creates one. That is deliberate. It creates a credential rather
+    /// than replacing one, the same value comes back on the next run, and nothing the user had
+    /// is lost — which is the property that mattered here.
     public func plan(fixed: String?, rotate: Bool) throws -> TokenPlan {
         if let fixed { return .fixed(fixed) }
         if rotate { return .pendingRotation(AccessToken.generateReadable()) }
