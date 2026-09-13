@@ -6,7 +6,7 @@
   wngmn
 </h1>
 
-[![CI](https://img.shields.io/github/actions/workflow/status/skhan75/wngmn/ci.yml?branch=main&label=CI&style=flat-square)](https://github.com/skhan75/wngmn/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/F-kItShipIt/wngmn/ci.yml?branch=main&label=CI&style=flat-square)](https://github.com/F-kItShipIt/wngmn/actions/workflows/ci.yml)
 ![macOS](https://img.shields.io/badge/macOS-26%2B-black?style=flat-square&logo=apple)
 ![Swift](https://img.shields.io/badge/Swift-6.2-orange?style=flat-square&logo=swift&logoColor=white)
 ![deps](https://img.shields.io/badge/dependencies-0-brightgreen?style=flat-square)
@@ -25,7 +25,7 @@ Every other tool in this space wants an account, a subscription, an Electron she
 ## Install
 
 ```sh
-git clone https://github.com/skhan75/wngmn.git && cd wngmn
+git clone https://github.com/F-kItShipIt/wngmn.git && cd wngmn
 Scripts/install.sh
 ```
 
@@ -34,7 +34,7 @@ Builds from source, drops wngmn.app in place, puts `wngmn` on your PATH. Sudo ne
 Or one line, same outcome. It's 142 lines of shell. You're about to pipe it into bash, so read it.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/skhan75/wngmn/main/Scripts/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/F-kItShipIt/wngmn/main/Scripts/bootstrap.sh | bash
 ```
 
 Three more and you're armed:
@@ -52,7 +52,7 @@ export ANTHROPIC_API_KEY=sk-ant-...   # For Ask only. Shell profile it.
 
 ```sh
 git checkout v0.1.0 && Scripts/install.sh                 # inside a clone
-curl -fsSL https://raw.githubusercontent.com/skhan75/wngmn/main/Scripts/bootstrap.sh | WNGMN_REF=v0.1.0 bash
+curl -fsSL https://raw.githubusercontent.com/F-kItShipIt/wngmn/main/Scripts/bootstrap.sh | WNGMN_REF=v0.1.0 bash
 Scripts/install.sh --uninstall
 ```
 

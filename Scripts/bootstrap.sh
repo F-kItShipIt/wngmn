@@ -2,7 +2,7 @@
 #
 # One-line installer. Fetches the source, builds it, and puts `wngmn` on your PATH.
 #
-#   curl -fsSL https://raw.githubusercontent.com/skhan75/wngmn/main/Scripts/bootstrap.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/F-kItShipIt/wngmn/main/Scripts/bootstrap.sh | bash
 #
 # It builds on your machine rather than downloading a binary, and that is not laziness.
 # A released binary would be ad-hoc signed, so Gatekeeper quarantines it and — worse for this
@@ -18,11 +18,11 @@
 #   WNGMN_KEEP_SRC=1      keep the downloaded source instead of deleting it
 #
 # To remove it again:
-#   curl -fsSL https://raw.githubusercontent.com/skhan75/wngmn/main/Scripts/bootstrap.sh | bash -s -- --uninstall
+#   curl -fsSL https://raw.githubusercontent.com/F-kItShipIt/wngmn/main/Scripts/bootstrap.sh | bash -s -- --uninstall
 #
 set -euo pipefail
 
-REPO="${WNGMN_REPO:-skhan75/wngmn}"
+REPO="${WNGMN_REPO:-F-kItShipIt/wngmn}"
 REF="${WNGMN_REF:-main}"
 TARBALL="https://codeload.github.com/$REPO/tar.gz/$REF"
 
