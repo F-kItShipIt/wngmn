@@ -436,7 +436,9 @@ public struct Options: Sendable, Equatable {
 
       Credentials are read from ANTHROPIC_API_KEY, then ANTHROPIC_AUTH_TOKEN, then the
       profile written by `ant auth login`. Asking sends the question and the recent
-      transcript to the Claude API; nothing is sent until you press the button.
+      transcript to the Claude API. Nothing is sent until you press the button — unless
+      you turn on the page's prefetch toggle, which sends every caller question as it
+      lands, without a press.
       --seconds <n>          selftest duration (default 3)
       --speed <n>            offline playback speed vs real time (default 8); the recogniser
                              must keep up with the endpointer, so this is not free
