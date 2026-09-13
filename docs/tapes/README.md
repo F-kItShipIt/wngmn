@@ -132,6 +132,17 @@ ffmpeg -i original.png -vf "crop=900:560:135:417,scale=-1:220:flags=lanczos" -y 
 The source images were 1254x1254 with the mark floating in the middle; uncropped, the padding
 makes it impossible to sit the logo on the same line as the title.
 
+## `docs/images/social-card.png` — the link preview
+
+The image people see when the repo is pasted into Slack, Reddit, X or LinkedIn. GitHub has no
+API for it: upload it by hand at **Settings → General → Social preview**. Without one, GitHub
+generates a card from the description and the owner avatar, which is why the org name is the
+loudest thing on it.
+
+Rendered from `card.html` at exactly 1280x640, the size GitHub asks for, via a headless browser
+rather than ffmpeg's drawtext so the type is real. Re-render after changing the logo or the
+one-line pitch.
+
 ## What is deliberately not shown
 
 There is no recording of the two-speaker transcript, the one where lines are labelled Caller
