@@ -240,6 +240,16 @@ JSON Lines on stdout, diagnostics on stderr. Pipe it into whatever you like.
 
 ## Privacy
 
+There is no server, so there is nothing to collect and no way for this project to reach you. No analytics, no crash reporter, no dependencies at all. Ask runs on your own API key, which means that traffic is between you and Anthropic and nobody is standing in the middle of it.
+
+The whole binary contains two URLs. Don't take my word for it:
+
+```sh
+strings "$(which wngmn)" | grep -oE 'https?://[a-zA-Z0-9./-]+' | sort -u
+# http://127.0.0.1
+# https://api.anthropic.com/v1/messages
+```
+
 The complete list of things that leave your Mac:
 
 - Audio: never. Not to transcribe, not to find the end of a question.
