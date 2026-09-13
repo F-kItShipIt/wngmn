@@ -43,6 +43,30 @@ public struct TokenStore: Sendable {
         try write(AccessToken.generateReadable())
     }
 
+    /// What this run should authenticate with, decided without writing anything.
+    ///
+    /// Rotation is the reason this is split from `commit`. The token has to exist before the
+    /// server can be built, and the server can still fail to take its port; rotating during
+    /// construction meant an occupied port destroyed the bookmarked token and exited, leaving
+    /// the user with a dead bookmark and no URL to replace it. Deciding here and writing after
+    /// the bind makes a failed start leave the machine exactly as it found it.
+    public func plan(fixed: String?, rotate: Bool) throws -> TokenPlan {
+        if let fixed { return .fixed(fixed) }
+        if rotate { return .pendingRotation(AccessToken.generateReadable()) }
+        return .stored(try loadOrCreate())
+    }
+
+    /// Writes a planned rotation down. Everything else has nothing to write.
+    ///
+    /// Returns whether the stored token actually changed, so the caller can say so only when
+    /// it is true.
+    @discardableResult
+    public func commit(_ plan: TokenPlan) throws -> Bool {
+        guard case let .pendingRotation(token) = plan else { return false }
+        _ = try write(token)
+        return true
+    }
+
     private func write(_ token: String) throws -> String {
         try FileManager.default.createDirectory(
             at: directory, withIntermediateDirectories: true,
@@ -53,5 +77,21 @@ public struct TokenStore: Sendable {
         // set beforehand, so doing this first would silently leave it world-readable.
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         return token
+    }
+}
+
+/// The token a run will use, and whether anything still has to reach the disk.
+public enum TokenPlan: Sendable, Equatable {
+    /// Supplied with `--token`. The user owns it; we never write it down.
+    case fixed(String)
+    /// Loaded from disk, or created there on first use. Already persisted.
+    case stored(String)
+    /// Freshly generated for `--new-token`, deliberately not yet written.
+    case pendingRotation(String)
+
+    public var value: String {
+        switch self {
+        case let .fixed(t), let .stored(t), let .pendingRotation(t): t
+        }
     }
 }

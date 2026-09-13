@@ -149,10 +149,12 @@ struct Wngmn {
     ) -> TranscriptServer? {
         guard options.serve else { return nil }
         let log = openLog(options)
+        // Decided now, written after the bind. See TokenStore.plan.
+        let tokenPlan = options.serveOnLAN ? resolveTokenPlan(options) : nil
         let server = TranscriptServer(configuration: .init(
             port: options.servePort,
             listenOnLAN: options.serveOnLAN,
-            token: options.serveOnLAN ? resolveToken(options) : nil,
+            token: tokenPlan?.value,
             onAsk: askHandler(options: options, profiles: profiles),
             onControl: controlHandler(control: control),
             log: log,
@@ -168,6 +170,23 @@ struct Wngmn {
             EventWriter.note("wngmn: cannot serve on port \(options.servePort): \(error)")
             EventWriter.note("wngmn: another wngmn may already be running; try --port")
             exit(2)
+        }
+        // The port is ours, so a `--new-token` rotation can be made permanent. Before the bind
+        // it was only a value in memory: a run that could not serve leaves the bookmarked token
+        // exactly as it was.
+        if let tokenPlan {
+            do {
+                if try TokenStore().commit(tokenPlan) {
+                    EventWriter.note(
+                        "wngmn: new token stored; previously bookmarked URLs no longer work"
+                    )
+                }
+            } catch {
+                EventWriter.note(
+                    "wngmn: serving with a new token, but it could not be stored (\(error));"
+                    + " the next run will go back to the previous one"
+                )
+            }
         }
         if let log {
             if !log.restored.isEmpty {
@@ -226,21 +245,15 @@ struct Wngmn {
     /// guessed — about 40 bits, which is thousands of years against an unthrottled server on
     /// your own wifi. If the store cannot be written, a per-run 128-bit token is used rather
     /// than serving unprotected.
-    private static func resolveToken(_ options: Options) -> String {
-        if let fixed = options.serveToken { return fixed }
-        let store = TokenStore()
+    private static func resolveTokenPlan(_ options: Options) -> TokenPlan {
         do {
-            let token = options.rotateToken ? try store.rotate() : try store.loadOrCreate()
-            if options.rotateToken {
-                EventWriter.note("wngmn: new token stored; previously bookmarked URLs no longer work")
-            }
-            return token
+            return try TokenStore().plan(fixed: options.serveToken, rotate: options.rotateToken)
         } catch {
             EventWriter.note(
                 "wngmn: could not use the stored token (\(error)); generating a one-off token"
                 + " for this run instead"
             )
-            return AccessToken.generate()
+            return .fixed(AccessToken.generate())
         }
     }
 
