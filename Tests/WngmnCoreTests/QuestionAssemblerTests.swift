@@ -149,7 +149,8 @@ struct DroppedQuestionTests {
 
         let dropped = a.takeDropped()
         #expect(dropped.count == 1)
-        #expect(dropped[0].speechStart == 1.0)
+        #expect(dropped[0].endpoint.speechStart == 1.0)
+        #expect(dropped[0].hadTranscript, "a gutted final did arrive, so this is a real loss")
         #expect(a.takeDropped().isEmpty, "draining must clear the list")
     }
 
@@ -275,6 +276,55 @@ struct VolatileFallbackTests {
         #expect(out.count == 1)
         #expect(out[0].text == "The funding round you just closed")
         #expect(out[0].usedVolatileFallback)
+    }
+
+    /// The bug behind "recognised, then lost": a boundary whose forced final never lands
+    /// still has its volatile text — the words the caption was showing. build() read only
+    /// finalised segments, so it dropped the endpoint as "no usable text" with the answer
+    /// sitting in `volatiles`. Measured live: endpoint 77.36-79.72 dropped while its
+    /// volatile "Testing, 123" was retained.
+    @Test("A timed-out boundary falls back to its retained volatile instead of dropping")
+    func timeoutFallsBackToVolatile() {
+        var a = QuestionAssembler()
+        a.endpointDetected(endpoint(77.36, 79.72), now: 100)
+        a.volatileArrived(start: 77.4, end: 80.21, text: "Testing, 123")
+        // No final ever lands for this span.
+        let out = a.tick(now: 103)
+        #expect(out.count == 1)
+        #expect(out.first?.text == "Testing, 123")
+        #expect(out.first?.usedVolatileFallback == true)
+        #expect(out.first?.timedOut == true)
+        #expect(a.takeDropped().isEmpty, "the volatile was usable, so nothing was dropped")
+    }
+
+    /// The coverage path has the same hole, plus a second: a later utterance's final purged
+    /// the stale endpoint's volatile before build() ran for it, so even the fallback had
+    /// nothing. The purge must spare a volatile that still belongs to a pending endpoint.
+    @Test("A later final does not purge a pending endpoint's volatile out from under it")
+    func laterFinalSparesPendingVolatile() {
+        var a = QuestionAssembler()
+        a.endpointDetected(endpoint(77.36, 79.72), now: 100)
+        a.volatileArrived(start: 77.4, end: 80.21, text: "Testing, 123")
+        // A later utterance finalises cleanly; its coverage triggers the pending build.
+        let out = a.finalArrived(start: 84.9, end: 85.6, text: "Next sentence.", now: 101)
+        let stale = out.first { $0.text.contains("Testing") }
+        #expect(stale != nil, "the earlier endpoint should surface with its volatile text")
+        #expect(stale?.usedVolatileFallback == true)
+        #expect(a.takeDropped().isEmpty)
+    }
+
+    /// A boundary the recogniser produced nothing at all for — no final, no volatile — is
+    /// still dropped, but flagged as no-transcript so the mic can report it quietly rather
+    /// than as a lost question. This is the common case on your own mic: typing, a cough.
+    @Test("A boundary with no transcript at all is flagged as no-transcript")
+    func silentDropIsFlagged() {
+        var a = QuestionAssembler()
+        a.endpointDetected(endpoint(10.0, 12.0), now: 100)
+        let out = a.tick(now: 103)
+        #expect(out.isEmpty)
+        let dropped = a.takeDropped()
+        #expect(dropped.count == 1)
+        #expect(dropped[0].hadTranscript == false, "nothing was ever recognised for this span")
     }
 
     @Test("Volatile text from an unrelated range is never substituted")
