@@ -31,6 +31,59 @@ struct Wngmn {
         // versions of itself in force at once.
         let profiles = loadProfile(options)
         let server = startServerIfRequested(options, control: control, profiles: profiles)
+
+        // Real-time auto-answering. Only when a page is being served (there is somewhere to
+        // push answers) and gated at runtime by the page's `auto` toggle, off by default.
+        // The conversation is the shared ledger for the whole call; the profile is snapshotted
+        // at start, so a mid-call edit changes manual Ask but not the auto system prompt.
+        let autoAnswerer: AutoAnswerer? = server.map { srv in
+            AutoAnswerer(
+                conversation: CallConversation(profile: profiles.current()),
+                answerOwnQuestions: true,
+                isEnabled: { control.autoAnswer },
+                respond: { system, messages, onText in
+                    guard let credentials = Credentials.resolveIncludingCLI() else {
+                        throw ClaudeClient.Failure.noCredentials
+                    }
+                    var cfg = ClaudeClient.Configuration()
+                    cfg.model = options.askModel
+                    cfg.effort = options.askEffort
+                    try await ClaudeClient(configuration: cfg).stream(
+                        system: system, messages: messages, credentials: credentials
+                    ) { onText($0) }
+                },
+                broadcast: { srv.broadcast($0) },
+                broadcastLive: { srv.broadcastLive($0) }
+            )
+        }
+
+        // Feed question events to the answerer in order. A fire-and-forget Task per event
+        // could reorder turns; a single consumer draining an ordered stream cannot. A
+        // half-second ticker closes a turn that has gone quiet past the gap.
+        let questionSink: (@Sendable (Event) -> Void)?
+        if let autoAnswerer {
+            let (stream, cont) = AsyncStream.makeStream(
+                of: (text: String, t0: Double, t1: Double, speaker: Speaker, now: Double).self)
+            Task {
+                for await q in stream {
+                    await autoAnswerer.question(
+                        text: q.text, t0: q.t0, t1: q.t1, speaker: q.speaker, now: q.now)
+                }
+            }
+            Task {
+                while true {
+                    try? await Task.sleep(for: .milliseconds(500))
+                    await autoAnswerer.tick(now: Self.monotonicNow())
+                }
+            }
+            questionSink = { event in
+                guard case let .question(text, t0, t1, _, _, _, speaker) = event else { return }
+                cont.yield((text, t0, t1, speaker ?? .caller, Self.monotonicNow()))
+            }
+        } else {
+            questionSink = nil
+        }
+
         let writer = EventWriter(
             // Speech still being spoken goes to open pages but is never retained: it is
             // superseded within the second, and remembering it evicts the questions a
@@ -38,6 +91,7 @@ struct Wngmn {
             observer: server.map { server in
                 { @Sendable event, line in
                     if event.isReplayable { server.broadcast(line) } else { server.broadcastLive(line) }
+                    questionSink?(event)
                 }
             }
         )
@@ -104,6 +158,13 @@ struct Wngmn {
             exit(1)
         }
         teardown.run()
+    }
+
+    /// Monotonic seconds for the turn batcher's gap timer — real elapsed time, unaffected
+    /// by wall-clock changes, and shared by the question sink and the ticker so a turn's
+    /// arrival and its timeout are measured on one clock.
+    private static func monotonicNow() -> Double {
+        Double(DispatchTime.now().uptimeNanoseconds) / 1_000_000_000
     }
 
     private static func logDirectory(_ options: Options) -> URL {
@@ -322,8 +383,10 @@ struct Wngmn {
             let update = try ControlRequest.parse(payload)
             if let muted = update.micMuted { control.setMicMuted(muted) }
             if let paused = update.tapPaused { control.setTapPaused(paused) }
+            if let auto = update.autoAnswer { control.setAutoAnswer(auto) }
             return #"{"mic":"\#(control.micMuted ? "muted" : "live")","#
-                + #""tap":"\#(control.tapPaused ? "paused" : "listening")"}"#
+                + #""tap":"\#(control.tapPaused ? "paused" : "listening")","#
+                + #""auto":"\#(control.autoAnswer ? "on" : "off")"}"#
         }
     }
 

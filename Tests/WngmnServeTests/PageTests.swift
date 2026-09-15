@@ -402,6 +402,17 @@ struct ControlStateTests {
         )
     }
 
+    @Test("The auto flag is read alongside mic and tap", .enabled(if: PageTests.nodeIsAvailable))
+    func parsesAuto() throws {
+        #expect(
+            try PageTests.evaluate("JSON.stringify(parseControlDetail('mic=live tap=listening auto=on'))")
+                == #"{"mic":"live","tap":"listening","auto":"on"}"#
+        )
+        #expect(
+            try PageTests.evaluate("parseControlDetail('mic=live tap=listening auto=off').auto") == "off"
+        )
+    }
+
     /// A detail that carries neither flag must leave the buttons alone rather than reset
     /// them to a default the machine never reported.
     @Test("An unrelated detail changes nothing", .enabled(if: PageTests.nodeIsAvailable))

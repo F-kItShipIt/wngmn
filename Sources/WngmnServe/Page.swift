@@ -388,6 +388,9 @@ summary { cursor:pointer; }
   <label class="pill toggle" title="Start answering each question as it lands, so pressing Ask is instant. Costs an API call per question.">
     <input type="checkbox" id="prefetch"> prefetch
   </label>
+  <label class="pill toggle" title="Answer each caller turn automatically as the call runs, building on every earlier answer. Off by default; sends the caller's words to Claude continuously and costs an API call per turn.">
+    <input type="checkbox" id="autoanswer"> auto
+  </label>
   <button class="pill ctl" id="panel" type="button"
           title="Hide the latency and warnings panel (\\) so the transcript gets the full width.">▸ panel</button>
   <span class="pill" id="clock">00:00</span>
@@ -430,6 +433,7 @@ summary { cursor:pointer; }
         </div>
         <svg id="chart" role="img" aria-label="Endpoint-to-final latency per question"></svg>
         <div class="cap" id="chartCap">Endpoint&nbsp;→&nbsp;final per question.</div>
+        <div class="cap" id="autoStat" hidden></div>
       </section>
 
       <section>
@@ -1183,7 +1187,7 @@ function applyRemoteScroll(anchor) {
 
 // --- capture controls ----------------------------------------------------
 
-const controlState = { mic: "live", tap: "listening" };
+const controlState = { mic: "live", tap: "listening", auto: "off" };
 
 // The capture layer reports its state as "mic=live tap=listening" on a `control` status
 // line. Pure, so the parsing is testable without a page.
@@ -1191,8 +1195,10 @@ function parseControlDetail(detail) {
   const out = {};
   const mic = /mic=([a-z]+)/.exec(detail || "");
   const tap = /tap=([a-z]+)/.exec(detail || "");
+  const auto = /auto=([a-z]+)/.exec(detail || "");
   if (mic) out.mic = mic[1];
   if (tap) out.tap = tap[1];
+  if (auto) out.auto = auto[1];
   return out;
 }
 
@@ -1204,6 +1210,8 @@ function renderControls() {
   const muted = controlState.mic === "muted";
   mic.textContent = muted ? "mic muted" : "mic on";
   mic.classList.toggle("off", muted);
+  const auto = $("autoanswer");
+  if (auto) auto.checked = controlState.auto === "on";
 }
 
 async function setControl(patch) {
@@ -1226,6 +1234,8 @@ $("tapctl").addEventListener("click", () =>
   setControl({ tap: controlState.tap === "paused" ? "listening" : "paused" }));
 $("micctl").addEventListener("click", () =>
   setControl({ mic: controlState.mic === "muted" ? "live" : "muted" }));
+$("autoanswer").addEventListener("change", (e) =>
+  setControl({ auto: e.target.checked ? "on" : "off" }));
 // An empty patch changes nothing and returns the current state, which is how the page
 // learns it was started with --start-paused.
 setControl({});
@@ -1563,6 +1573,15 @@ function handleEvent(e) {
       case "scroll":
         applyRemoteScroll(e.anchor);
         break;
+      case "auto": {
+        const el = $("autoStat");
+        if (el) {
+          el.hidden = false;
+          const calls = e.calls || 0, answers = e.answers || 0;
+          el.textContent = `auto: ${answers} answered · ${calls} call${calls === 1 ? "" : "s"}`;
+        }
+        break;
+      }
       case "answer":
       case "answer_done":
       case "answer_failed":

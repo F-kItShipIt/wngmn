@@ -257,6 +257,7 @@ The complete list of things that leave your Mac:
 - Audio: never. Not to transcribe, not to find the end of a question.
 - Ask: the question, the recent ones, your profile. Off to api.anthropic.com when you click.
 - **prefetch**, if you switch it on: every caller question goes the moment it lands, no click. Their words, not just yours.
+- **auto**, if you switch it on: every caller turn goes as it ends, no click, and each answer builds on the ones before it in a running conversation with Claude. Off by default; the loudest change to this list, so it is the one you turn on deliberately.
 - `install-model`: a download from Apple.
 - Transcript: your local disk, and only while `--serve` is up. `--no-log` turns it off.
 - `--listen`: the page goes on your LAN, gated by the URL token.
