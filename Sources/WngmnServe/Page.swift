@@ -369,6 +369,25 @@ section + section { margin-top:22px; }
   border:1px solid var(--rule); border-radius:8px; padding:9px;
 }
 summary { cursor:pointer; }
+  /* ---- end-of-call notes ---- */
+  #endprompt { position:fixed; left:50%; bottom:calc(18px + env(safe-area-inset-bottom));
+    transform:translateX(-50%); background:var(--surface); border:1px solid var(--rule);
+    border-radius:12px; padding:10px 14px; display:none; gap:10px; align-items:center;
+    z-index:40; box-shadow:0 8px 30px rgba(0,0,0,0.28); font-size:14px; }
+  #endprompt.show { display:flex; }
+  #endprompt button { border:0; border-radius:8px; padding:5px 12px; cursor:pointer; font:inherit; }
+  #endprompt .yes { background:var(--series); color:#fff; }
+  #endprompt .no { background:transparent; color:var(--ink-2); }
+  #notes { position:fixed; inset:0; background:rgba(0,0,0,0.45); display:none;
+    place-items:center; z-index:50; padding:24px; }
+  #notes.show { display:grid; }
+  #notesCard { background:var(--surface); border:1px solid var(--rule); border-radius:14px;
+    max-width:640px; width:100%; max-height:82vh; overflow:auto; padding:20px 22px; }
+  #notesCard h2 { margin:0 0 12px; font-size:16px; }
+  #notesClose { float:right; border:0; background:transparent; color:var(--ink-2);
+    font-size:20px; line-height:1; cursor:pointer; }
+  #notesBody .pending { color:var(--muted); }
+  #notesBody .failed { color:var(--crit); }
 </style>
 </head>
 <body data-hangover-ms="__HANGOVER_MS__">
@@ -391,6 +410,8 @@ summary { cursor:pointer; }
   <label class="pill toggle" title="Answer each caller turn automatically as the call runs, building on every earlier answer. Off by default; sends the caller's words to Claude continuously and costs an API call per turn.">
     <input type="checkbox" id="autoanswer"> auto
   </label>
+  <button class="pill ctl" id="endbtn" type="button"
+          title="Write meeting notes from the whole call so far. Auto must have run to build them.">▸ notes</button>
   <button class="pill ctl" id="panel" type="button"
           title="Hide the latency and warnings panel (\\) so the transcript gets the full width.">▸ panel</button>
   <span class="pill" id="clock">00:00</span>
@@ -1569,11 +1590,13 @@ function handleEvent(e) {
         // `renderCaption` then shows them there rather than leaving the caption blank.
         partialText = "";
         addQuestion(e);
+        noteActivity();
         break;
       case "scroll":
         applyRemoteScroll(e.anchor);
         break;
       case "auto": {
+        autoUsed = true;
         const el = $("autoStat");
         if (el) {
           el.hidden = false;
@@ -1582,6 +1605,9 @@ function handleEvent(e) {
         }
         break;
       }
+      case "summary_pending": autoUsed = true; showNotes('<div class="pending">Writing notes…</div>'); break;
+      case "summary_done": showNotes(md(e.text || "")); break;
+      case "summary_failed": showNotes(`<div class="failed">${esc(e.detail || "notes could not be written")}</div>`); break;
       case "answer":
       case "answer_done":
       case "answer_failed":
@@ -1611,8 +1637,53 @@ function connect() {
     handleEvent(e);
   };
 }
+// --- end-of-call notes ---------------------------------------------------
+// A page asks whether the call is over after a stretch of silence, but only once auto has
+// actually run — a page that never turned auto on has no ledger to summarise and should not
+// be nagged. `No` snoozes until the next question resets the idle clock.
+const CALL_IDLE_MS = 20000;
+let lastActivity = Date.now();
+let autoUsed = false;
+let endPromptSnoozed = false;
+
+function noteActivity() { lastActivity = Date.now(); endPromptSnoozed = false; }
+function hideEndPrompt() { $("endprompt").classList.remove("show"); }
+function notesOpen() { return $("notes").classList.contains("show"); }
+function showNotes(html) { $("notesBody").innerHTML = html; $("notes").classList.add("show"); hideEndPrompt(); }
+
+function requestSummary() {
+  showNotes('<div class="pending">Writing notes…</div>');
+  fetch("/summarise" + window.location.search, {
+    method: "POST", headers: { "content-type": "application/json" }, body: "{}",
+  }).then(res => { if (!res.ok) return res.text().then(t => { throw new Error(t); }); })
+    .catch(e => showNotes(`<div class="failed">${esc(String(e))}</div>`));
+}
+
+$("endbtn").addEventListener("click", requestSummary);
+$("endYes").addEventListener("click", requestSummary);
+$("endNo").addEventListener("click", () => { hideEndPrompt(); endPromptSnoozed = true; });
+$("notesClose").addEventListener("click", () => $("notes").classList.remove("show"));
+$("notes").addEventListener("click", (e) => { if (e.target.id === "notes") $("notes").classList.remove("show"); });
+
+setInterval(() => {
+  if (!autoUsed || endPromptSnoozed || notesOpen()) return;
+  if (Date.now() - lastActivity > CALL_IDLE_MS) $("endprompt").classList.add("show");
+}, 3000);
+
 connect();
 </script>
+<div id="endprompt" role="dialog" aria-live="polite">
+  <span>Has the conversation ended?</span>
+  <button class="yes" id="endYes" type="button">Yes, write notes</button>
+  <button class="no" id="endNo" type="button">No</button>
+</div>
+<div id="notes" role="dialog" aria-modal="true" aria-label="Meeting notes">
+  <div id="notesCard">
+    <button id="notesClose" type="button" aria-label="Close">×</button>
+    <h2>Meeting notes</h2>
+    <div id="notesBody"></div>
+  </div>
+</div>
 </body>
 </html>
 """#

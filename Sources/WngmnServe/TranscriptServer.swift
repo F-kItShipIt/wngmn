@@ -53,6 +53,9 @@ public final class TranscriptServer: Sendable {
         /// Applies a `POST /control` body and returns the resulting state as JSON.
         /// Throwing rejects the request rather than applying half of it.
         public var onControl: ControlHandler?
+        /// Triggers end-of-call notes over the whole conversation. Fire-and-forget: the
+        /// summary streams back as `summary_*` frames, so the POST just accepts and returns.
+        public var onSummarise: (@Sendable () -> Void)?
         /// Mirrors the replay buffer to disk, so a wngmn that dies mid-interview can be
         /// resumed instead of coming back with nothing to tell the pages that reconnect.
         /// Nil disables it entirely — see `--no-log`.
@@ -66,6 +69,7 @@ public final class TranscriptServer: Sendable {
             port: UInt16 = 7373, listenOnLAN: Bool = false, token: String? = nil,
             onAsk: AskHandler? = nil,
             onControl: ControlHandler? = nil,
+            onSummarise: (@Sendable () -> Void)? = nil,
             log: EventLog? = nil,
             hangoverMilliseconds: Double = EndpointerConfig().hangoverMs
         ) {
@@ -74,6 +78,7 @@ public final class TranscriptServer: Sendable {
             self.token = token
             self.onAsk = onAsk
             self.onControl = onControl
+            self.onSummarise = onSummarise
             self.log = log
             self.hangoverMilliseconds = hangoverMilliseconds
         }
@@ -411,7 +416,7 @@ public final class TranscriptServer: Sendable {
             return send(Self.response(status: "403 Forbidden", body: "bad or missing token"),
                         on: connection, close: true)
         }
-        let allowed = ["/ask", "/control"].contains(request.path) ? "POST" : "GET"
+        let allowed = ["/ask", "/control", "/summarise"].contains(request.path) ? "POST" : "GET"
         guard request.method == allowed else {
             return send(Self.response(status: "405 Method Not Allowed", body: "\(allowed) only"),
                         on: connection, close: true)
@@ -446,9 +451,27 @@ public final class TranscriptServer: Sendable {
             answer(payload: request.body, on: connection)
         case "/control":
             control(payload: request.body, on: connection)
+        case "/summarise":
+            summarise(on: connection)
         default:
             send(Self.response(status: "404 Not Found", body: "no such path"), on: connection, close: true)
         }
+    }
+
+    /// Kicks off end-of-call notes. The notes stream back over `/events` as `summary_*`
+    /// frames to every page, so this only has to accept the request.
+    private func summarise(on connection: NWConnection) {
+        guard let onSummarise = configuration.onSummarise else {
+            return send(
+                Self.response(status: "503 Service Unavailable",
+                              body: #"{"error":"summarising is not configured"}"#,
+                              contentType: "application/json"),
+                on: connection, close: true)
+        }
+        onSummarise()
+        send(Self.response(status: "202 Accepted", body: #"{"ok":true}"#,
+                           contentType: "application/json"),
+             on: connection, close: true)
     }
 
     private func openEventStream(on connection: NWConnection, resumingAfter: Int?) {

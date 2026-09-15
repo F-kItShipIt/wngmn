@@ -103,6 +103,28 @@ public actor AutoAnswerer {
         }
     }
 
+    /// Writes end-of-call notes from the whole conversation and pushes them to every page.
+    ///
+    /// Nothing to summarise when auto never ran — the ledger is built from answered turns —
+    /// so it says so rather than summarising an empty conversation.
+    public func summarise() async {
+        guard await !conversation.isEmpty else {
+            broadcast(Self.summaryFailedFrame(
+                detail: "no conversation yet — turn auto on during the call to build notes"))
+            return
+        }
+        broadcast(Self.summaryPendingFrame())
+        let (system, messages) = await conversation.summaryRequest()
+        let accumulated = Accumulator()
+        do {
+            try await respond(system, messages) { accumulated.append($0) }
+            broadcast(Self.summaryDoneFrame(
+                text: accumulated.value.trimmingCharacters(in: .whitespacesAndNewlines)))
+        } catch {
+            broadcast(Self.summaryFailedFrame(detail: "\(error)"))
+        }
+    }
+
     /// A tiny reference box so the streaming closure can accumulate without capturing `self`.
     private final class Accumulator: @unchecked Sendable {
         private let lock = NSLock()
@@ -132,6 +154,14 @@ public actor AutoAnswerer {
 
     static func statsFrame(_ stats: Stats) -> String {
         object(["type": "auto", "answers": stats.answers, "calls": stats.calls])
+    }
+
+    static func summaryPendingFrame() -> String { object(["type": "summary_pending"]) }
+    static func summaryDoneFrame(text: String) -> String {
+        object(["type": "summary_done", "text": text])
+    }
+    static func summaryFailedFrame(detail: String) -> String {
+        object(["type": "summary_failed", "detail": detail])
     }
 
     private static func object(_ dict: [String: Any]) -> String {

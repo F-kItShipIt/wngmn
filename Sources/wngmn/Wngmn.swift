@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import WngmnAudio
 import WngmnCore
 import WngmnAsk
@@ -30,7 +31,12 @@ struct Wngmn {
         // it, the capture paths read Terms. Two sources would mean one file with two
         // versions of itself in force at once.
         let profiles = loadProfile(options)
-        let server = startServerIfRequested(options, control: control, profiles: profiles)
+        // The summary trigger is late-bound: the server needs it at construction, but it
+        // calls into the answerer, which needs the server. The box is filled once both exist.
+        let summariseTrigger = Mutex<(@Sendable () -> Void)?>(nil)
+        let server = startServerIfRequested(
+            options, control: control, profiles: profiles,
+            onSummarise: { summariseTrigger.withLock { $0 }?() })
 
         // Real-time auto-answering. Only when a page is being served (there is somewhere to
         // push answers) and gated at runtime by the page's `auto` toggle, off by default.
@@ -55,6 +61,9 @@ struct Wngmn {
                 broadcast: { srv.broadcast($0) },
                 broadcastLive: { srv.broadcastLive($0) }
             )
+        }
+        if let autoAnswerer {
+            summariseTrigger.withLock { $0 = { Task { await autoAnswerer.summarise() } } }
         }
 
         // Feed question events to the answerer in order. A fire-and-forget Task per event
@@ -206,7 +215,8 @@ struct Wngmn {
     /// continuing quietly: the user asked to read the transcript in a browser, and a run
     /// that transcribes to a page nobody can open is not what they wanted.
     private static func startServerIfRequested(
-        _ options: Options, control: CaptureControl, profiles: ProfileSource
+        _ options: Options, control: CaptureControl, profiles: ProfileSource,
+        onSummarise: @escaping @Sendable () -> Void
     ) -> TranscriptServer? {
         guard options.serve else { return nil }
         let log = openLog(options)
@@ -218,6 +228,7 @@ struct Wngmn {
             token: tokenPlan?.value,
             onAsk: askHandler(options: options, profiles: profiles),
             onControl: controlHandler(control: control),
+            onSummarise: onSummarise,
             log: log,
             hangoverMilliseconds: options.endpointer.hangoverMs
         ))

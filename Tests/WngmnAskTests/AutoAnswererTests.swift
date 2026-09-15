@@ -102,6 +102,30 @@ struct AutoAnswererTests {
         #expect(failed!.contains("\"key\":\"caller@2.0\""))
     }
 
+    @Test("Summarise writes notes from the conversation and broadcasts them")
+    func summarises() async {
+        let h = Harness(); h.setReply("Big answer.")
+        let a = make(h)
+        // Build some ledger first.
+        await a.question(text: "Tell me about the round.", t0: 1.0, t1: 2.0, speaker: .caller, now: 100.0)
+        _ = await a.tick(now: 103.0)
+        h.setReply("Notes: the round, the plan.")
+        await a.summarise()
+        #expect(h.seen.contains { $0.contains("summary_pending") })
+        let done = h.seen.first { $0.contains("summary_done") }
+        #expect(done != nil)
+        #expect(done!.contains("Notes: the round, the plan."))
+    }
+
+    @Test("Summarising an empty call reports there is nothing to summarise")
+    func summariseEmpty() async {
+        let h = Harness()
+        let a = make(h)
+        await a.summarise()
+        #expect(h.seen.first { $0.contains("summary_failed") } != nil)
+        #expect(h.seen.first { $0.contains("summary_done") } == nil)
+    }
+
     @Test("Your own question is answered only when the feature is on")
     func ownQuestionGated() async {
         let hOff = Harness()
