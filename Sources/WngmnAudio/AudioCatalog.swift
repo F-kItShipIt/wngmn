@@ -31,11 +31,9 @@ public enum AudioCatalog {
         public let isDefaultInput: Bool
 
         public var isAggregate: Bool { transport == kAudioDeviceTransportTypeAggregate }
-        /// Opening a Bluetooth headset's microphone switches the link to duplex, and while
-        /// it is in that mode the process tap captures nothing at all — the caller's audio
-        /// disappears with no error anywhere. Measured on AirPods Max: tap-only gives
-        /// partials and questions, tap-plus-headset-mic gives zero, whichever order they
-        /// are started in.
+        /// A headset used for both output and input runs its link in duplex, at a phone-
+        /// quality rate the capture graph follows (`SystemAudioTap`, note 4). Named at
+        /// startup because the caller's audio quality drops with no other sign of it.
         public var isBluetooth: Bool { transport == kAudioDeviceTransportTypeBluetooth }
         public var transportName: String { AudioProperty.fourCC(transport) }
     }

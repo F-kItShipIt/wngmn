@@ -42,11 +42,10 @@ enum MicCheck {
         }
         EventWriter.note("")
         if device?.isBluetooth == true {
-            EventWriter.note("  WARNING  This is a Bluetooth microphone. Using it puts the link into")
-            EventWriter.note("           duplex mode, and while it is there the process tap captures")
-            EventWriter.note("           nothing — the caller's audio disappears silently.")
-            EventWriter.note("           Measure the built-in microphone instead:")
-            EventWriter.note("             wngmn miccheck --mic-device BuiltInMicrophoneDevice")
+            EventWriter.note("  NOTE  This is a Bluetooth microphone. Using it puts the link into duplex,")
+            EventWriter.note("        so the caller arrives at phone quality and the tap follows that rate.")
+            EventWriter.note("        To keep the link at full rate, measure the built-in microphone:")
+            EventWriter.note("          wngmn miccheck --mic-device BuiltInMicrophoneDevice")
             EventWriter.note("")
         }
         EventWriter.note("  Recording for \(Int(recordSeconds))s starting NOW.")

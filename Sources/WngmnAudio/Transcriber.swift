@@ -198,7 +198,13 @@ public actor Transcriber {
 
     /// Builds the resampler and preloads the model. Call before the first buffer:
     /// `prepareToAnalyze` costs 51–59 ms that would otherwise land on the first question.
-    public func prepare(sourceFormat: AVAudioFormat) async throws {
+    /// Builds the resampler for a source format.
+    ///
+    /// Called by `prepare`, and again after a capture-graph rebuild that came back at a
+    /// different rate — a Bluetooth link dropping into duplex takes the aggregate from 48 kHz
+    /// to 24. A converter built for the old rate reads the new buffers at double speed, an
+    /// octave up, and the recogniser returns fragments.
+    public func reconfigure(sourceFormat: AVAudioFormat) throws {
         guard let converter = AVAudioConverter(from: sourceFormat, to: analyzerFormat) else {
             throw Failure.converterUnavailable(
                 from: "\(sourceFormat)", to: "\(analyzerFormat)"
@@ -216,6 +222,10 @@ public actor Transcriber {
         converter.downmix = true
         self.converter = converter
         self.sourceFormat = sourceFormat
+    }
+
+    public func prepare(sourceFormat: AVAudioFormat) async throws {
+        try reconfigure(sourceFormat: sourceFormat)
 
         try await analyzer.prepareToAnalyze(in: analyzerFormat)
 

@@ -141,9 +141,10 @@ public actor Pipeline {
     private var transcriberDied = false
     private var rebuildRequested: RebuildReason?
 
-    private enum RebuildReason: String {
+    enum RebuildReason: String {
         case defaultOutputDeviceChanged = "default_output_changed"
         case clockDeviceDied = "clock_device_died"
+        case clockRateChanged = "clock_rate_changed"
         case noBuffers = "no_buffers"
     }
 
@@ -184,7 +185,7 @@ public actor Pipeline {
         writer.emit(.status(
             state: "capturing",
             format: StreamFormat(rate: tap.format.sampleRate, ch: Int(tap.format.channelCount)),
-            detail: nil
+            detail: captureFormatDetail(base: nil)
         ))
 
         // Only the result stream crosses into the child task — the transcriber itself is
@@ -272,10 +273,27 @@ public actor Pipeline {
     }
 
     private func requestRebuild(for change: DeviceWatcher.Change) {
+        rebuildRequested = Self.rebuildReason(for: change)
+    }
+
+    /// Which rebuild a device-watcher change asks for. Pure, so the mapping can be asserted:
+    /// a change with no rebuild behind it would be a listener firing into nothing.
+    static func rebuildReason(for change: DeviceWatcher.Change) -> RebuildReason {
         switch change {
-        case .defaultOutputDeviceChanged: rebuildRequested = .defaultOutputDeviceChanged
-        case .clockDeviceDied: rebuildRequested = .clockDeviceDied
+        case .defaultOutputDeviceChanged: .defaultOutputDeviceChanged
+        case .clockDeviceDied: .clockDeviceDied
+        case .clockRateChanged: .clockRateChanged
         }
+    }
+
+    /// Names a rate substitution when one happened, so a duplex Bluetooth link shows up in
+    /// the log as a fact rather than having to be inferred from a garbled transcript.
+    private func captureFormatDetail(base: String?) -> String? {
+        let advertised = tap.advertisedSampleRate
+        guard advertised > 0, advertised != tap.format.sampleRate else { return base }
+        let note = "clock device runs at \(Int(tap.format.sampleRate)) Hz, the tap advertised "
+            + "\(Int(advertised)); capturing at the clock rate"
+        return base.map { "\($0); \(note)" } ?? note
     }
 
     /// Tears the capture graph down synchronously, from any thread. Idempotent.
@@ -658,9 +676,8 @@ public actor Pipeline {
 
     /// Reports a tap that clocks but carries no audio.
     ///
-    /// The signature of an output route the tap can no longer follow — opening a Bluetooth
-    /// headset's microphone switches the link to duplex and does exactly this. Everything
-    /// else looks healthy, which is why it needs saying out loud.
+    /// The signature of an output route the tap can no longer follow. Everything else looks
+    /// healthy, which is why it needs saying out loud.
     private func checkSilentCapture() {
         let loudest = 20 * log10(Double(max(loudestSample, 1e-9)))
         guard Self.shouldWarnSilentCapture(
@@ -672,13 +689,13 @@ public actor Pipeline {
         writer.emit(.warning(
             code: "silent_capture",
             detail: "buffers are arriving but every sample has been silence. The tapped "
-                + "device may not be rendering, or the audio route changed underneath the "
-                + "tap — opening a Bluetooth headset's microphone does this."
+                + "device may not be rendering, or the audio route changed underneath the tap."
         ))
     }
 
     private func rebuildCapture(reason: RebuildReason) async {
         consecutiveRebuilds += 1
+        let previousRate = tap.format.sampleRate
         writer.emit(.warning(
             code: "rebuilding",
             detail: "capture graph rebuild: \(reason.rawValue) (attempt \(consecutiveRebuilds))"
@@ -695,10 +712,16 @@ public actor Pipeline {
         tap = SystemAudioTap(configuration: configuration.tap)
         do {
             try startCapture()
+            // A graph that came back at another rate — a Bluetooth link dropping into duplex
+            // takes the aggregate from 48 kHz to 24 — needs the resampler rebuilt with it, or
+            // the new buffers are read at the old rate.
+            if tap.format.sampleRate != previousRate {
+                try await transcriber?.reconfigure(sourceFormat: tap.format)
+            }
             writer.emit(.status(
                 state: "capturing",
                 format: StreamFormat(rate: tap.format.sampleRate, ch: Int(tap.format.channelCount)),
-                detail: "rebuilt after \(reason.rawValue)"
+                detail: captureFormatDetail(base: "rebuilt after \(reason.rawValue)")
             ))
             // Re-arm rather than clear: `nil` disables checkCaptureHealth entirely, so a
             // rebuilt graph that never delivers a buffer would go unnoticed for the rest of

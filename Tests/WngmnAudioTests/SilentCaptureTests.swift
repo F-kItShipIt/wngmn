@@ -5,9 +5,10 @@ import Testing
 ///
 /// `no_audio` asks whether buffers are arriving. It cannot see the failure where they are —
 /// so the watchdog stays quiet and the timeline advances normally — while every sample in
-/// them is silence. Observed when the AirPods microphone was opened: the Bluetooth link
-/// switched to duplex, the tap kept clocking, and the caller's audio simply stopped being
-/// in it. Four minutes with no warning of any kind.
+/// them is silence. First observed when the AirPods microphone was opened, before the
+/// capture graph followed the clock device's rate: the link switched to duplex, the tap
+/// kept clocking, and the caller's audio simply stopped being in it. Four minutes with no
+/// warning of any kind.
 @Suite("Silent capture")
 struct SilentCaptureTests {
     let floor = -60.0

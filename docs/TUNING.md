@@ -256,9 +256,10 @@ shared with the tap's defaults. `--mic-open-db` is dBFS and must be negative;
 
 **The mic half assumes headphones.** On speakers the microphone also hears the caller, and
 the same sentence is transcribed twice, once under each label; the binary warns at startup
-if the default output looks like a speaker device. A Bluetooth microphone is worse than
-that: using it puts the link into duplex mode, and while it is there the process tap
-captures nothing at all — the caller's audio disappears silently.
+if the default output looks like a speaker device. A Bluetooth microphone has a cost of its
+own: using it puts the link into duplex mode and the caller arrives at phone quality. The
+tap follows the link's rate, so they are still transcribed; a different microphone keeps
+the link at full rate.
 
 ---
 

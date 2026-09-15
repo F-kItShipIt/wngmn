@@ -17,6 +17,8 @@ public final class DeviceWatcher: @unchecked Sendable {
     public enum Change: Sendable {
         case defaultOutputDeviceChanged
         case clockDeviceDied
+        /// The clock device changed sample rate without changing identity.
+        case clockRateChanged
     }
 
     private var tokens: [AudioPropertyListenerToken] = []
@@ -50,7 +52,13 @@ public final class DeviceWatcher: @unchecked Sendable {
         })
     }
 
-    /// Adds a liveness listener for the device the aggregate is clocked by.
+    /// Adds liveness and sample-rate listeners for the device the aggregate is clocked by.
+    ///
+    /// Rate matters as much as liveness. A Bluetooth headset whose microphone is opened
+    /// mid-call drops its link to duplex and the device from 48 kHz to 24, keeping its
+    /// identity: the default-output listener does not fire, `DeviceIsAlive` still reads 1,
+    /// and the aggregate follows the new rate while everything downstream is still built
+    /// for the old one. Only a rebuild puts them back in agreement.
     public func watchClockDevice(_ device: AudioObjectID) throws {
         guard device != kAudioObjectUnknown else { return }
         let queue = self.queue
@@ -63,6 +71,11 @@ public final class DeviceWatcher: @unchecked Sendable {
             // itself the death signal.
             guard !AudioProperty.isAlive(device) else { return }
             queue.async { handler(.clockDeviceDied) }
+        })
+        tokens.append(try AudioPropertyListener.add(
+            to: device, AudioProperty.address(kAudioDevicePropertyNominalSampleRate)
+        ) { _, _ in
+            queue.async { handler(.clockRateChanged) }
         })
     }
 
