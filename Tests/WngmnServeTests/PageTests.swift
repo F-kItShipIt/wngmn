@@ -659,6 +659,20 @@ struct MobilePaneTests {
             "(setPane('transcript'), activate({text:'x', t0:1}), document.body.dataset.pane)")
             == "transcript")
     }
+
+    /// Observed: the microphone muted mid-sentence, and the words already sent as a partial
+    /// stayed frozen in the caption for the rest of the session. `applyMute` discards the
+    /// audio, but nothing had told the page that the caption it was holding is now about
+    /// nothing. Each side's control clears only that side's partial: muting yourself must
+    /// not blank a caller mid-question.
+    @Test("A partial is dropped from the caption when its own side is silenced", .enabled(if: PageTests.nodeIsAvailable))
+    func captionClearsWhenItsSideIsSilenced() throws {
+        #expect(try PageTests.evaluate(#"String(captionStale("you", {mic:"muted", tap:"listening"}))"#) == "true")
+        #expect(try PageTests.evaluate(#"String(captionStale("caller", {mic:"live", tap:"paused"}))"#) == "true")
+        #expect(try PageTests.evaluate(#"String(captionStale("you", {mic:"live", tap:"paused"}))"#) == "false")
+        #expect(try PageTests.evaluate(#"String(captionStale("caller", {mic:"muted", tap:"listening"}))"#) == "false")
+        #expect(try PageTests.evaluate(#"String(captionStale("you", {mic:"live", tap:"listening"}))"#) == "false")
+    }
 }
 
 /// Applying the same event twice must leave the page in the same state as applying it once.

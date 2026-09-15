@@ -61,6 +61,15 @@ public struct QuestionAssembler: Sendable {
         var fromVolatile = false
     }
 
+    /// A boundary that closed but produced no question, and why.
+    public struct DroppedEndpoint: Sendable, Equatable {
+        public let endpoint: Endpoint
+        /// A transcript did arrive for the span but normalised to nothing usable (pure
+        /// punctuation or artifacts) — a genuine loss. `false` means the recogniser
+        /// produced no text at all, usually non-speech the gate opened on.
+        public let hadTranscript: Bool
+    }
+
     private var pending: [Pending] = []
     private var segments: [Segment] = []
     /// High-water mark of finalised audio. Tracked separately from `segments`, which is
@@ -77,7 +86,7 @@ public struct QuestionAssembler: Sendable {
     /// there is nothing left to rescue it with — measured on a seven-second question, where
     /// six words were replaced by a run of full stops that reached the user verbatim.
     private var volatiles: [Segment] = []
-    private var dropped: [Endpoint] = []
+    private var dropped: [DroppedEndpoint] = []
     /// Settable so a reloaded profile reaches jargon repair without rebuilding the
     /// assembler, which would discard the questions it is holding mid-utterance.
     public var terms: TermList
@@ -90,10 +99,11 @@ public struct QuestionAssembler: Sendable {
 
     /// Boundaries that were satisfied but produced no usable text, since the last call.
     ///
-    /// These are not recoverable — there was nothing to say — but they must be visible.
-    /// A silent drop looks identical to a quiet stretch of interview, which is exactly the
-    /// distinction someone tuning the hangover during rehearsal needs to make.
-    public mutating func takeDropped() -> [Endpoint] {
+    /// Each carries whether a transcript arrived at all (`hadTranscript`). One that did and
+    /// still normalised to nothing is a genuine loss worth a warning; one that never
+    /// produced a word is usually the gate opening on non-speech — on your own mic, typing
+    /// or a cough — and the caller of this decides how loudly to say so.
+    public mutating func takeDropped() -> [DroppedEndpoint] {
         defer { dropped.removeAll() }
         return dropped
     }
@@ -153,9 +163,19 @@ public struct QuestionAssembler: Sendable {
            Self.finalLostContent(final: text, volatile: candidate.text) {
             segment = Segment(start: start, end: end, text: candidate.text, fromVolatile: true)
         }
-        // Everything this final covers is now decided. Holding the volatiles longer would
-        // only risk one matching a later final by coincidence.
-        volatiles.removeAll { $0.end <= end + volatileMatchTolerance }
+        // Everything this final covers is now decided. Holding volatiles longer would only
+        // risk one matching a later final by coincidence — except a volatile that still
+        // belongs to a *pending* endpoint, whose own forced final may never land: build()
+        // needs it as the fallback, and this same final's coverage is about to trigger that
+        // build below. Spare exactly those.
+        volatiles.removeAll { v in
+            guard v.end <= end + volatileMatchTolerance else { return false }
+            let neededByPending = pending.contains { p in
+                v.start < p.endpoint.decisionTime + claimTolerance
+                    && v.end > p.endpoint.speechStart - claimTolerance
+            }
+            return !neededByPending
+        }
         segments.append(segment)
         if segments.count > maximumHeldSegments {
             segments.removeFirst(segments.count - maximumHeldSegments)
@@ -250,19 +270,43 @@ public struct QuestionAssembler: Sendable {
         let claimed = segments.filter { $0.start < cutoff }
         segments.removeAll { $0.start < cutoff }
 
+        var pieces = claimed
         var text = TextNormalizer.normalizeFinal(
             claimed.map(\.text).joined(separator: " "), terms: terms
         )
+
+        // Fallback to the retained volatile when no usable final covers the span. A forced
+        // final that never lands, or lands gutted to punctuation, otherwise dropped a
+        // boundary whose words were sitting in `volatiles` — exactly what the caption was
+        // showing. Whole regions are substituted, never spliced, the same rule finalArrived
+        // uses; claimed only by range, so an unrelated volatile is never pulled in.
+        let windowVolatiles = volatiles.filter {
+            $0.start < cutoff && $0.end > endpoint.speechStart - claimTolerance
+        }
+        var rescuedVolatile = false
+        if text.isEmpty, !windowVolatiles.isEmpty {
+            let starts = Set(windowVolatiles.map(\.start))
+            volatiles.removeAll { starts.contains($0.start) }
+            pieces = windowVolatiles.sorted { $0.start < $1.start }
+            text = TextNormalizer.normalizeFinal(
+                pieces.map(\.text).joined(separator: " "), terms: terms
+            )
+            rescuedVolatile = !text.isEmpty
+        }
+
         guard !text.isEmpty else {
             // Nothing was emitted, so there is no previous question on screen for a later
             // continuation to revise. Leaving the old text in place would glue the next
             // half-question onto one the user stopped seeing questions ago.
             lastText = ""
             lastStart = 0
-            dropped.append(endpoint)
+            dropped.append(DroppedEndpoint(
+                endpoint: endpoint,
+                hadTranscript: !claimed.isEmpty || !windowVolatiles.isEmpty
+            ))
             return nil
         }
-        let usedVolatile = claimed.contains(where: \.fromVolatile)
+        let usedVolatile = rescuedVolatile || pieces.contains(where: \.fromVolatile)
 
         var t0 = endpoint.speechStart
         var revises = false

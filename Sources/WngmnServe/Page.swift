@@ -568,6 +568,18 @@ function peekTarget(list) {
 // Speech in progress, if any. Held rather than read back off the element because the
 // caption also has to render when there is none, and "" is a meaningful state.
 let partialText = "";
+// Whose speech it is. A partial from the tap carries no speaker; the mic labels its own.
+let partialSpeaker = "caller";
+
+/// Whether the partial still in progress belongs to a side that was just silenced.
+///
+/// Muting mid-sentence discards the audio, but the words already sent as a partial were
+/// sitting in the caption and stayed there for the rest of the session. Each control
+/// clears only its own side: muting yourself must not blank a caller mid-question.
+function captionStale(speaker, control) {
+  return (speaker === "you" && control.mic === "muted")
+      || (speaker === "caller" && control.tap === "paused");
+}
 
 /// The caption line: speech in progress, or failing that the last thing that was said.
 ///
@@ -1541,6 +1553,10 @@ function handleEvent(e) {
       case "status":
         if (e.state === "control") {
           Object.assign(controlState, parseControlDetail(e.detail));
+          if (captionStale(partialSpeaker, controlState)) {
+            partialText = "";
+            renderCaption();
+          }
           renderControls();
           break;
         }
@@ -1552,6 +1568,7 @@ function handleEvent(e) {
         break;
       case "partial":
         partialText = e.text;
+        partialSpeaker = e.speaker || "caller";
         renderCaption();
         break;
       case "question":
