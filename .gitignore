@@ -16,3 +16,6 @@ profiles/*
 !profiles/technical.md
 # A private working list of open issues, not a public tracker.
 BACKLOG.md
+
+# Lavish Editor review artifacts
+.lavish/
