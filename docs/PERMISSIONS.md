@@ -147,31 +147,38 @@ Two traps around it, both already hit:
 
 ## Audio routing: two traps that are not permissions
 
-Both of these produce the same symptom as a denial — silence, no error — so they belong in the
-same document.
+Both of these are easy to mistake for a denial, so they belong in the same document.
 
 ### A Bluetooth headset used for both output and input
 
-Opening a Bluetooth headset's microphone switches the link into duplex mode, and while it is
-there **the process tap captures nothing at all**. No error, no dropped buffers, the timeline
-keeps advancing, and the caller's audio is simply absent from it. Measured on AirPods Max: tap
-alone gives partials and questions; tap plus that same headset's microphone gives zero, in
-either start order.
+Opening a Bluetooth headset's microphone switches the link into duplex mode, and the output
+device's sample rate drops with it — 48 kHz to 24 on AirPods. The tap keeps delivering, but
+its format property still claims 48 kHz while the aggregate it runs on delivers 24, and read
+at the wrong rate the caller came back as fragments or not at all. Measured: `selftest`
+counted 72,000 frames in 3 s under a format that read 48,000. The capture graph now takes its
+rate from the aggregate, and rebuilds if the clock device's rate changes mid-call, so the
+caller is transcribed at phone quality rather than lost:
+
+```
+{"type":"status","state":"capturing","format":{"rate":24000,"ch":1},"detail":"clock device runs at 24000 Hz, the tap advertised 48000; capturing at the clock rate"}
+```
 
 wngmn checks the *system* default input rather than its own, because the conferencing app
-opens a microphone too — Zoom pointed at the headset breaks the tap whatever wngmn was told to
-use. When both defaults are the same Bluetooth device it warns at startup and again at the end
-of `wngmn devices`:
+opens a microphone too — Zoom pointed at the headset puts the link in duplex whatever wngmn
+was told to use. When both defaults are the same Bluetooth device it says so at startup and
+again at the end of `wngmn devices`:
 
 ```
-ROUTE PROBLEM
-  'AirPods Max' is both the default output and the default input.
+ROUTE NOTE
+  'AirPods Max' is both the default output and the default input, so the
+  Bluetooth link runs in duplex: the caller arrives at phone quality and
+  wngmn captures at the link's rate.
 ```
 
-The fix is to point the microphone somewhere else — in System Settings **and** in the
-conferencing app, which opens its own. You can keep listening through the headset; it is only
-using its microphone that breaks capture. `miccheck` warns for the same reason if the device
-it is about to measure is Bluetooth.
+Nothing needs changing for capture to work. If jargon suffers at phone quality, point the
+microphone somewhere else — in System Settings **and** in the conferencing app, which opens
+its own — and the link stays at full rate; you can keep listening through the headset.
+`miccheck` says the same if the device it is about to measure is Bluetooth.
 
 If the route changes mid-call, the tap keeps clocking and latency still looks fine, so the
 pipeline watches for a second signature: buffers arriving whose loudest sample has stayed

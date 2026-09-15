@@ -11,7 +11,7 @@ import Synchronization
 /// clocked by the current default output device → an IOProc that copies frames into a
 /// lock-free ring buffer.
 ///
-/// Three things about this graph are counter-intuitive and all three are load-bearing:
+/// Four things about this graph are counter-intuitive and all four are load-bearing:
 ///
 /// 1. **The IOProc must be real-time safe.** It runs on a Core Audio real-time thread.
 ///    Allocating, locking or writing to a pipe there stalls that thread when the consumer
@@ -29,6 +29,15 @@ import Synchronization
 /// 3. **Tap creation succeeding proves nothing.** `AudioHardwareCreateProcessTap` returns a
 ///    fully formed tap with a valid format for bundle IDs of apps that are not installed.
 ///    Only non-zero samples prove capture works, which is what `selftest` is for.
+///
+/// 4. **The tap's format is not the delivered format.** `kAudioTapPropertyFormat` is the
+///    tap's native 48 kHz. The IOProc runs on the aggregate, and the aggregate follows its
+///    clock device. A Bluetooth headset whose microphone has just been opened drops its
+///    link to duplex and runs at 24 kHz, the aggregate with it, while the tap's property
+///    still says 48. Measured: `selftest` counted 72,000 frames in 3 s — 24,000 a second —
+///    under a format that read 48,000. Fed on as 48 kHz, speech plays at double speed an
+///    octave up and the recogniser returns fragments. `deliveredFormat` takes the rate from
+///    the aggregate for that reason.
 public final class SystemAudioTap: @unchecked Sendable {
     public struct Configuration: Sendable {
         /// Apps to capture. Scoping by bundle ID rather than by process object means the tap
@@ -84,6 +93,8 @@ public final class SystemAudioTap: @unchecked Sendable {
 
     public let ring: AudioRingBuffer
     public private(set) var format: AVAudioFormat!
+    /// What `kAudioTapPropertyFormat` claimed, kept so a substitution can be reported.
+    public private(set) var advertisedSampleRate: Double = 0
     /// The output device the aggregate is clocked by. Pinned at start; if it disappears the
     /// IOProc silently stops, which is what `DeviceWatcher` exists to notice.
     public private(set) var clockDeviceID: AudioObjectID = kAudioObjectUnknown
@@ -167,6 +178,7 @@ public final class SystemAudioTap: @unchecked Sendable {
         try createTap()
         try readTapFormat()
         try createAggregate(clockedBy: outputUID)
+        adoptAggregateRate()
         try resolveTapBufferIndex()
         if configuration.keepOutputAlive { startKeepAlive(on: output) }
         try startIO()
@@ -247,6 +259,30 @@ public final class SystemAudioTap: @unchecked Sendable {
             throw Failure.unexpectedFormat("expected a mono mixdown, got \(format.channelCount) channels")
         }
         self.format = format
+        advertisedSampleRate = format.sampleRate
+    }
+
+    /// Replaces the tap's advertised rate with the aggregate's, which is the rate the IOProc
+    /// actually delivers at. See note 4 above.
+    private func adoptAggregateRate() {
+        let nominal = try? AudioProperty.value(
+            Double.self, from: aggregateID,
+            AudioProperty.address(kAudioDevicePropertyNominalSampleRate)
+        )
+        format = Self.deliveredFormat(tap: format, aggregateRate: nominal)
+    }
+
+    /// The format buffers arrive in: the tap's layout at the aggregate's rate.
+    ///
+    /// Pure, so the rule can be asserted without a capture graph. An unreadable or
+    /// nonsensical aggregate rate keeps the tap's own description: it is the best remaining
+    /// evidence, and a guess would be a second copy of the bug this exists to fix.
+    static func deliveredFormat(tap: AVAudioFormat, aggregateRate: Double?) -> AVAudioFormat {
+        guard let aggregateRate, aggregateRate > 0, aggregateRate != tap.sampleRate else { return tap }
+        return AVAudioFormat(
+            commonFormat: tap.commonFormat, sampleRate: aggregateRate,
+            channels: tap.channelCount, interleaved: tap.isInterleaved
+        ) ?? tap
     }
 
     private func createAggregate(clockedBy outputUID: String) throws {

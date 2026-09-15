@@ -468,13 +468,13 @@ struct Wngmn {
         teardown.onTeardown { pipeline.stop() }
 
         guard options.mic else {
-            warnIfRouteBreaksTap()
+            noteIfRouteRunsInDuplex()
             try await pipeline.run()
             return
         }
 
         warnIfNotOnHeadphones()
-        warnIfRouteBreaksTap()
+        noteIfRouteRunsInDuplex()
         let mic = MicSource(
             configuration: MicSource.Configuration(
                 capture: MicCapture.Configuration(deviceUID: options.micDeviceUID),
@@ -525,23 +525,19 @@ struct Wngmn {
     /// stuttering rather than as a configuration mistake, so it is worth saying up front.
     /// The route that silently removes the caller from the transcript.
     ///
-    /// Said at startup and again in `devices`, because the symptom gives nothing away: the
-    /// tap keeps clocking, latency looks fine, and only the caller's lines are missing.
-    /// Checked against the system default input, not wngmn's own device, since the call
-    /// app opens a microphone too — Zoom pointed at the headset breaks the tap whatever
-    /// wngmn was told to use.
-    static func warnIfRouteBreaksTap() {
-        guard let headset = AudioRoute.conflict() else { return }
+    /// Said at startup and again in `devices`. The capture graph follows the clock device's
+    /// rate, so a duplex link no longer loses the caller — but it does drop them to phone
+    /// quality, which is worth knowing before the call rather than after. Checked against
+    /// the system default input, not wngmn's own device, since the call app opens a
+    /// microphone too.
+    static func noteIfRouteRunsInDuplex() {
+        guard let headset = AudioRoute.duplexHeadset() else { return }
         EventWriter.note(
-            "wngmn: WARNING '\(headset)' is both your output and your input. Using a"
-            + " Bluetooth headset's microphone switches the link to duplex, and while it is"
-            + " there the tap captures NOTHING — the caller will be missing from the"
-            + " transcript entirely, with no error."
-        )
-        EventWriter.note(
-            "wngmn: set the microphone to something else — in System Settings AND in"
-            + " Zoom, which opens its own — e.g. MacBook Pro Microphone. You can keep"
-            + " listening through the headset."
+            "wngmn: '\(headset)' is both your output and your input, so the Bluetooth link"
+            + " runs in duplex. The caller arrives at phone quality and wngmn captures at the"
+            + " link's rate (the capturing status says which). Transcription works there; a"
+            + " different microphone — in System Settings AND in Zoom — keeps the link at"
+            + " full rate if jargon suffers."
         )
     }
 

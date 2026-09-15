@@ -54,15 +54,16 @@ jobs:
             exit 1
           }
 
-      # Four suites drive the real on-device recogniser over recorded speech, and a clean
+      # Five suites drive the real on-device recogniser over recorded speech, and a clean
       # runner has no en-US speech model installed. `wngmn install-model` would fetch one, but
       # that is a 396 MB Apple asset download on every run that can fail for reasons unrelated
       # to the change under test, so those suites are skipped rather than installed. They do
       # not skip themselves when the model is missing — they fail — so the list has to name
       # each one: OfflinePipelineTests and the two suites that share its file and call its
       # `run` helper (ContinuationWindowTests, HangoverPauseTests), plus
-      # TranscriberTimelineTests, which builds a Transcriber directly. The pure suite in that
-      # last file, MicIdleAdvanceTests, needs no model and deliberately still runs.
+      # TranscriberTimelineTests and TranscriberSourceRateTests, which build a Transcriber
+      # directly. The pure suite in the timeline file, MicIdleAdvanceTests, needs no model
+      # and deliberately still runs.
       # Everything else — the endpointer, text repair, the ring buffer, the event protocol,
       # the HTTP/SSE server and the page, the Claude client — needs neither the model nor any
       # audio permission, which is what keeps most of the suite runnable here at all.
@@ -73,7 +74,8 @@ jobs:
             --skip OfflinePipelineTests \
             --skip ContinuationWindowTests \
             --skip HangoverPauseTests \
-            --skip TranscriberTimelineTests
+            --skip TranscriberTimelineTests \
+            --skip TranscriberSourceRateTests
 
       # `selftest` plays a tone and asserts the tap hears it. It cannot run here: System Audio
       # Recording is a TCC grant to the launching process and there is nobody to approve the

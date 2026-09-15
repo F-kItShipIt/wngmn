@@ -129,3 +129,15 @@ extension CaptureHealthTests {
         #expect(event == .warning(code: "rebuild_failed", detail: "boom"))
     }
 }
+
+/// What asks for a rebuild in the first place.
+extension CaptureHealthTests {
+    /// A Bluetooth link dropping into duplex changes the clock device's *rate* without
+    /// changing which device it is, so neither existing trigger fires. It needs its own.
+    @Test("Every device-watcher change maps to a rebuild")
+    func watcherChangesRebuild() {
+        #expect(Pipeline.rebuildReason(for: .defaultOutputDeviceChanged) == .defaultOutputDeviceChanged)
+        #expect(Pipeline.rebuildReason(for: .clockDeviceDied) == .clockDeviceDied)
+        #expect(Pipeline.rebuildReason(for: .clockRateChanged) == .clockRateChanged)
+    }
+}

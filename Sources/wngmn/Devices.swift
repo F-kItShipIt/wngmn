@@ -80,16 +80,16 @@ enum Devices {
         let taps = AudioCatalog.liveTaps()
         Swift.print("Live taps owned by this client: \(taps.count)")
 
-        // Last, so it is the thing left on screen: this route removes the caller from the
-        // transcript with no error anywhere else to notice.
-        if let headset = AudioRoute.conflict() {
+        // Last, so it is the thing left on screen: on this route the caller arrives at
+        // phone quality, and nothing else here says so.
+        if let headset = AudioRoute.duplexHeadset() {
             Swift.print("")
-            Swift.print("ROUTE PROBLEM")
-            Swift.print("  '\(headset)' is both the default output and the default input.")
-            Swift.print("  A Bluetooth headset's microphone puts the link into duplex mode, and")
-            Swift.print("  the tap captures nothing while it is there — the caller will be absent")
-            Swift.print("  from the transcript, with no error. Use a different microphone; you")
-            Swift.print("  can keep listening through the headset.")
+            Swift.print("ROUTE NOTE")
+            Swift.print("  '\(headset)' is both the default output and the default input, so the")
+            Swift.print("  Bluetooth link runs in duplex: the caller arrives at phone quality and")
+            Swift.print("  wngmn captures at the link's rate. Transcription works there. A")
+            Swift.print("  different microphone keeps the link at full rate; you can still listen")
+            Swift.print("  through the headset.")
         }
     }
 

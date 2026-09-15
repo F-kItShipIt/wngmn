@@ -506,9 +506,13 @@ while working fine on a TTY, so it passes an interactive smoke test and dies the
 anyone runs `wngmn | jq`.
 
 Finally, two that bite during routine use. A Bluetooth headset used for **both** output and
-input switches the link to duplex, and while it is there the tap captures nothing — no error,
-timeline still advancing, the caller simply missing from the transcript; `AudioRoute.conflict()`
-warns about it at startup and in `devices`. And a private aggregate device is invisible to
+input switches the link to duplex and the output device's sample rate with it, 48 kHz to 24
+on AirPods — but `kAudioTapPropertyFormat` still reports 48, and the IOProc delivers at the
+aggregate's rate, not the tap's. Read as 48 kHz that audio played at double speed and the
+caller came back as fragments. `SystemAudioTap` now adopts the aggregate's rate,
+`DeviceWatcher` rebuilds when the clock device's rate changes mid-call, and
+`AudioRoute.duplexHeadset()` names the route at startup and in `devices`, since the caller
+arrives at phone quality on it. And a private aggregate device is invisible to
 `system_profiler` by construction, so one leaked by a crash would never be noticed —
 `sweepLeakedAggregates()` runs at every start and destroys only devices carrying this
 program's own `local.wngmn.` UID prefix.
