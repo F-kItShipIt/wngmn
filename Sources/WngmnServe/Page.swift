@@ -480,6 +480,21 @@ summary { cursor:pointer; }
   </div>
 </main>
 
+<!-- Before the script, not after: it wires these up as it runs, and a null lookup throws
+     before connect(), so the page would never open its event stream. -->
+<div id="endprompt" role="dialog" aria-live="polite">
+  <span>Has the conversation ended?</span>
+  <button class="yes" id="endYes" type="button">Yes, write notes</button>
+  <button class="no" id="endNo" type="button">No</button>
+</div>
+<div id="notes" role="dialog" aria-modal="true" aria-label="Meeting notes">
+  <div id="notesCard">
+    <button id="notesClose" type="button" aria-label="Close">×</button>
+    <h2>Meeting notes</h2>
+    <div id="notesBody"></div>
+  </div>
+</div>
+
 <script>
 const $ = id => document.getElementById(id);
 const lines = $("lines"), live = $("live");
@@ -1672,18 +1687,6 @@ setInterval(() => {
 
 connect();
 </script>
-<div id="endprompt" role="dialog" aria-live="polite">
-  <span>Has the conversation ended?</span>
-  <button class="yes" id="endYes" type="button">Yes, write notes</button>
-  <button class="no" id="endNo" type="button">No</button>
-</div>
-<div id="notes" role="dialog" aria-modal="true" aria-label="Meeting notes">
-  <div id="notesCard">
-    <button id="notesClose" type="button" aria-label="Close">×</button>
-    <h2>Meeting notes</h2>
-    <div id="notesBody"></div>
-  </div>
-</div>
 </body>
 </html>
 """#
