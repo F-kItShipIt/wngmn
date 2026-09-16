@@ -7,10 +7,11 @@ import Foundation
 /// batcher holds the current speaker's utterances open until the turn ends — the other
 /// speaker starts, or a gap of silence passes — then hands the whole turn over at once.
 ///
-/// A caller turn always qualifies: whether it actually needs an answer is the model's call
-/// (it replies `NONE`), not the batcher's. Your own turn qualifies only when
-/// `answerOwnQuestions` is on *and* the turn is question-shaped, so thinking out loud does
-/// not spend a call on every sentence.
+/// A caller turn always qualifies, and so does your own when `answerOwnQuestions` is on:
+/// whether a turn actually needs an answer is the model's call (it replies `NONE`), not the
+/// batcher's. A shape heuristic here misjudged live transcripts — the recogniser clips the
+/// opening "Can you…" and drops the question mark — so the model, which sees the whole
+/// conversation, decides instead.
 ///
 /// Pure and time-driven, like `QuestionAssembler`: utterances and a monotonic `now` go in,
 /// turns come out, so it is tested without a socket or a clock.
@@ -34,7 +35,7 @@ public struct TurnBatcher: Sendable {
     /// Silence after the last utterance before the turn is considered over. Longer than the
     /// caller merge window, so a mid-question breath does not split a turn in two.
     public var turnGapSeconds: Double
-    /// Whether a question-shaped turn of your own also earns an answer.
+    /// Whether your own turns are sent for an answer too, not only the caller's.
     public var answerOwnQuestions: Bool
 
     public init(turnGapSeconds: Double = 2.5, answerOwnQuestions: Bool = false) {
@@ -96,28 +97,7 @@ public struct TurnBatcher: Sendable {
         case .caller:
             return turn
         case .you:
-            return (answerOwnQuestions && Self.isQuestionShaped(text)) ? turn : nil
+            return answerOwnQuestions ? turn : nil
         }
     }
-
-    /// A cheap heuristic: does this read as a question rather than a statement?
-    ///
-    /// Ends with a question mark, or opens with an interrogative. Deliberately conservative —
-    /// it gates whether *your own* speech spends a call, so a false positive is a wasted
-    /// answer to your own remark, which is exactly what the whole gate exists to avoid.
-    public static func isQuestionShaped(_ text: String) -> Bool {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return false }
-        if trimmed.hasSuffix("?") { return true }
-        let firstWord = trimmed
-            .lowercased()
-            .prefix { $0.isLetter }
-        return Self.interrogatives.contains(String(firstWord))
-    }
-
-    private static let interrogatives: Set<String> = [
-        "how", "what", "why", "when", "where", "who", "whom", "whose", "which",
-        "can", "could", "would", "should", "do", "does", "did",
-        "is", "are", "was", "were", "will", "shall", "may", "might", "am",
-    ]
 }

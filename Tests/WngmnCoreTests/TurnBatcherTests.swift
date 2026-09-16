@@ -7,8 +7,7 @@ import Testing
 /// each endpoint separately would answer half-questions; the batcher waits for the speaker
 /// to finish — signalled by the other speaker starting, or by a gap of silence — and hands
 /// over the whole turn. Caller turns always qualify (the model replies NONE if there is
-/// nothing to answer); your own turns qualify only when they are question-shaped and the
-/// feature is enabled, so ordinary remarks of your own do not spend a call.
+/// nothing to answer); your own turns qualify the same way when the feature is enabled.
 @Suite("TurnBatcher")
 struct TurnBatcherTests {
     @Test("Consecutive caller lines within the gap form one turn, closed when you speak")
@@ -67,11 +66,12 @@ struct TurnBatcherTests {
         #expect(turn?.speaker == .you)
     }
 
-    @Test("Your own statement is not answered even when the feature is on")
-    func ownStatementOnStillSkipped() {
+    @Test("Your own turn qualifies when the feature is on, question-shaped or not")
+    func ownTurnOnQualifies() {
         var b = TurnBatcher(turnGapSeconds: 2.0, answerOwnQuestions: true)
-        _ = b.question(text: "I run infrastructure for a payments startup.", t0: 1, t1: 3, speaker: .you, now: 100.0)
-        #expect(b.tick(now: 103.0) == nil)
+        // The recogniser clipped "Can you write" and dropped the question mark.
+        _ = b.question(text: "To, a program to merge 2 sorted arrays.", t0: 1, t1: 3, speaker: .you, now: 100.0)
+        #expect(b.tick(now: 103.0)?.speaker == .you, "the model decides NONE, not the batcher")
     }
 
     @Test("A caller turn still always qualifies, question-shaped or not")
@@ -89,15 +89,5 @@ struct TurnBatcherTests {
         _ = b.question(text: "about your margins.", t0: 3.0, t1: 4.0, speaker: .caller, now: 102.0)
         #expect(b.question(text: "Sure.", t0: 5, t1: 5.5, speaker: .you, now: 103.0)?.text
                 == "I was wondering, about your margins.")
-    }
-
-    @Test("Question-shaped detection covers marks and interrogative leads")
-    func questionShapes() {
-        #expect(TurnBatcher.isQuestionShaped("what is the time complexity"))
-        #expect(TurnBatcher.isQuestionShaped("Can you do it in place?"))
-        #expect(TurnBatcher.isQuestionShaped("How would I shard this"))
-        #expect(!TurnBatcher.isQuestionShaped("Let me think."))
-        #expect(!TurnBatcher.isQuestionShaped("I run a payments startup."))
-        #expect(!TurnBatcher.isQuestionShaped(""))
     }
 }

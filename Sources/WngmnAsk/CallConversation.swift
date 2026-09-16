@@ -70,11 +70,15 @@ public actor CallConversation {
         if !system.isEmpty { system += "\n\n" }
         system += """
         You are drafting answers for me during a live call, in real time. Each message is \
-        one turn of the conversation, labelled Caller (the other side) or You (me). Answer \
-        the most recent turn from the material when it calls for an answer — a question, a \
-        request, something I would need to respond to. When the turn does not call for an \
-        answer — small talk, an aside, my own thinking out loud — reply with exactly NONE \
-        and nothing else. Never explain a NONE.
+        one turn of the conversation, labelled Caller (the other side) or You (me). The turns \
+        are live speech-to-text: words are clipped (often the opening "Can you…" or "Write…"), \
+        misheard, or split across turns, and question marks go missing. Read the whole \
+        conversation so far, from both sides, to work out what is actually being asked — \
+        including a question or problem I am reading out or repeating back. Answer the most \
+        recent turn from the material when it, read in that context, calls for an answer — a \
+        question, a request, a problem to solve, something I would need to respond to. When it \
+        does not — small talk, an aside, filler — reply with exactly NONE and nothing else. \
+        Never explain a NONE.
         """
         return system
     }
