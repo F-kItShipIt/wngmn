@@ -211,6 +211,16 @@ Same binary, same question format. Only `## Context` changed.
 
 All three ship in [`profiles/`](profiles). Copy one, swap the contents, keep the headings.
 
+## Nobody presses Ask
+
+Tick **auto** and the button stops being the point. The same endpointing that draws the transcript decides when the other person has finished a turn, and the answer is drafted while they are still waiting for yours.
+
+![auto is on: the caller finishes, the answer arrives, nobody touched the page](docs/images/auto.gif)
+
+Your own turns go too, not just theirs — a recogniser clips the opening of a question (`Can you write…` becomes `To, a program to…`) far more often than it loses the whole thing, so the model is given the conversation and left to decide, rather than a rule here guessing from the shape of one line.
+
+That is a call per turn, and the header counts them: `auto: 1 answered · 1 call`. A turn that needs no answer gets none — the model replies `NONE` and the page shows nothing — but the call was still made and still counted, which is why the number is on screen rather than buried.
+
 ## Ask, and your own key
 
 Checked in this order: `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, then `ant auth login`. Find none and it says so at startup, not mid-question: `wngmn: no Anthropic credentials, so Ask will fail on every question.`

@@ -78,6 +78,27 @@ ffmpeg -framerate 4 -i /tmp/frames/f%04d.png -i /tmp/pal.png \
     -y docs/images/ask.gif
 ```
 
+## `docs/images/auto.gif` — auto-answer, with nobody pressing Ask
+
+The same recording as `ask.gif` in every respect — same padded fixture, same 1440x680
+viewport, same 250 ms loop, same two-pass palette at 1180 wide — with two differences.
+
+**1.** Tick `#autoanswer` immediately after `goto`, before the first question lands, and press
+nothing afterwards. That is the whole subject of the recording:
+
+```js
+await page.locator("#autoanswer").click();
+```
+
+**2.** Record for 34 s rather than 28 s. auto cannot start until the turn is over, and the turn
+is not over until the batcher's 2.5 s gap has passed, so the answer begins roughly 3 s later
+than a pressed Ask would have.
+
+Expect one call, not two: the fixture's two questions are 1.2 s apart, inside the caller merge
+window, so they close as a single turn and are answered together. The header reads
+`auto: 1 answered · 1 call`. Leave the end-of-call prompt in shot if it appears — 20 s of
+silence is what triggers it, and it is the same dialog the transcript panel offers.
+
 ## `docs/images/phone.png` — the page at phone width
 
 Same server as the GIF, started with `--listen` instead of `--serve` so the capture uses the
