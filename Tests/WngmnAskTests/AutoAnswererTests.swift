@@ -50,12 +50,41 @@ struct AutoAnswererTests {
 
         let done = h.seen.first { $0.contains("answer_done") }
         #expect(done != nil)
-        #expect(done!.contains("\"key\":\"caller@1.0\""))
+        #expect(done!.contains("\"key\":\"caller@1\""))
         #expect(done!.contains("Series B, forty-two million."))
         #expect(!done!.contains("\"for\""))
         let stats = await a.currentStats
         #expect(stats.calls == 1)
         #expect(stats.answers == 1)
+    }
+
+    /// The answer must be spelled with the `t0` the question line was published with.
+    ///
+    /// Every other key assertion in this suite uses a whole-number `t0`, and that is the one
+    /// case where raw interpolation and `EventEncoder.number` agree — `1.0` against `1` is a
+    /// difference the old code got away with because nothing compared them. So no test here
+    /// crossed the boundary, and the mismatch shipped: a live `t0` accumulates as
+    /// `startTime + i / rate` and carries far more than three decimals, the page is only ever
+    /// given the rounded spelling, and an answer keyed the long way matched no row. It was
+    /// dropped after the model call had been made and counted, which is how the page came to
+    /// report an answer over an empty panel.
+    @Test("An answer is keyed with the t0 spelling the question line was published with")
+    func keyMatchesThePublishedQuestionLine() async {
+        // The value from the session log that exposed this, to 14 decimal places.
+        let t0 = 58.10982145766667
+        let published = EventEncoder.number(t0)
+        #expect(published == "58.11", "the page is only ever given a 3 dp t0")
+        #expect("\(t0)" != published, "raw interpolation spells the same instant differently")
+
+        let h = Harness(); h.setReply("Series B, forty-two million.")
+        let a = make(h)
+        await a.question(text: "Tell me about the round.", t0: t0, t1: 60.25, speaker: .caller, now: 100.0)
+        _ = await a.tick(now: 103.0)
+
+        let done = h.seen.first { $0.contains("answer_done") }
+        #expect(done != nil)
+        #expect(done?.contains("\"key\":\"caller@\(published)\"") == true,
+                "the answer has to land on the row the page built from that question line")
     }
 
     @Test("A NONE reply shows nothing but still counts the call and keeps context")
@@ -99,7 +128,7 @@ struct AutoAnswererTests {
         _ = await a.tick(now: 103.0)
         let failed = h.seen.first { $0.contains("answer_failed") }
         #expect(failed != nil)
-        #expect(failed!.contains("\"key\":\"caller@2.0\""))
+        #expect(failed!.contains("\"key\":\"caller@2\""))
     }
 
     @Test("Summarise writes notes from the conversation and broadcasts them")
@@ -138,6 +167,6 @@ struct AutoAnswererTests {
         let on = make(hOn, own: true)
         await on.question(text: "How would I reverse a list?", t0: 1, t1: 2, speaker: .you, now: 100.0)
         _ = await on.tick(now: 103.0)
-        #expect(hOn.seen.first { $0.contains("\"key\":\"you@1.0\"") } != nil)
+        #expect(hOn.seen.first { $0.contains("\"key\":\"you@1\"") } != nil)
     }
 }

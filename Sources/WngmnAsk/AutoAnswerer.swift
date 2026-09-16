@@ -137,8 +137,16 @@ public actor AutoAnswerer {
 
     /// Keyed like a manual Ask so the page attaches it to the turn's first line and shows it
     /// in the answer panel. The page keys answers by `<speaker>@<t0>`.
+    ///
+    /// `t0` goes through the same encoder the question line went through, and not raw
+    /// interpolation. The page rebuilds this key from the JSON it was given, where `t0` has
+    /// already been rounded to 3 dp, so the two spellings only ever agreed when the Double's
+    /// shortest form happened to be that short. `t0` accumulates as `startTime + i / rate`,
+    /// which is essentially never that short, so live auto-answers matched no row and were
+    /// dropped silently — after the call had been made, and counted in the `auto` stats, which
+    /// is why the page could report an answer and show an empty panel.
     static func key(for turn: TurnBatcher.Turn) -> String {
-        "\(turn.speaker.rawValue)@\(turn.t0)"
+        "\(turn.speaker.rawValue)@\(EventEncoder.number(turn.t0))"
     }
 
     static func answerDoneFrame(key: String, text: String) -> String {
