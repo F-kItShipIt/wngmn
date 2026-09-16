@@ -46,6 +46,7 @@ struct Wngmn {
             AutoAnswerer(
                 conversation: CallConversation(profile: profiles.current()),
                 answerOwnQuestions: true,
+                ownTurnMinimumWords: options.autoOwnMinWords,
                 isEnabled: { control.autoAnswer },
                 respond: { system, messages, onText in
                     guard let credentials = Credentials.resolveIncludingCLI() else {

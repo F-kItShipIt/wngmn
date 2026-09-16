@@ -134,6 +134,10 @@ public struct Options: Sendable, Equatable {
     /// Latency is the binding constraint on a live call, so this defaults low rather than
     /// to the API's own default of `high`.
     public var askEffort = "low"
+    /// How many words one of your own turns must carry before auto spends a call on it.
+    /// Zero answers every one of them. See `TurnBatcher.ownTurnMinimumWords` for where the
+    /// four came from; it is a flag because the right floor depends on how you talk.
+    public var autoOwnMinWords = 4
 
     /// The effort levels this model family accepts.
     public static let effortLevels = ["low", "medium", "high", "xhigh", "max"]
@@ -247,6 +251,15 @@ public struct Options: Sendable, Equatable {
                     )
                 }
                 o.askEffort = level
+            case "--auto-own-min-words":
+                let raw = try value(arg)
+                // Parsed as an Int rather than through `number`, which is a Double: a floor
+                // of "3.5 words" has no meaning, and truncating one silently would answer a
+                // different set of turns than the one that was asked for.
+                guard let words = Int(raw) else {
+                    throw ParseError("--auto-own-min-words expects a whole number, got '\(raw)'")
+                }
+                o.autoOwnMinWords = words
             case "--listen": o.serve = true; o.serveOnLAN = true
             case "--port":
                 let raw = try value(arg)
@@ -310,6 +323,12 @@ public struct Options: Sendable, Equatable {
         if o.micEndpointer.openThresholdDB >= 0 {
             throw ParseError(
                 "--mic-open-db is dBFS and must be negative (got \(o.micEndpointer.openThresholdDB))"
+            )
+        }
+        if o.autoOwnMinWords < 0 {
+            throw ParseError(
+                "--auto-own-min-words is a word count and cannot be negative"
+                + " (got \(o.autoOwnMinWords)); 0 answers every turn of your own"
             )
         }
         if let directory = o.logDirectory, directory.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -433,6 +452,12 @@ public struct Options: Sendable, Equatable {
       --ask-model <id>       model for answers (default claude-opus-5)
       --ask-effort <level>   low, medium, high, xhigh or max (default low — latency is the
                              binding constraint on a live call)
+      --auto-own-min-words <n>
+                             words one of your own turns needs before auto answers it
+                             (default 4). Your filler is what spends calls you did not
+                             mean to spend; a clipped question still runs 7 to 12 words.
+                             0 answers every turn of your own. The caller is never held
+                             to it.
 
       Credentials are read from ANTHROPIC_API_KEY, then ANTHROPIC_AUTH_TOKEN, then the
       profile written by `ant auth login`. Asking sends the question and the recent

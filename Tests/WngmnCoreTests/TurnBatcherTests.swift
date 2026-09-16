@@ -81,6 +81,55 @@ struct TurnBatcherTests {
         #expect(b.tick(now: 103.0)?.speaker == .caller, "the model decides NONE, not the batcher")
     }
 
+    /// The floor is a word count and not a shape, because shape is what was tried and
+    /// removed: the recogniser clips exactly the words a shape rule reads. Length survives
+    /// that. Measured against every one of your own turns in four recorded sessions — the
+    /// real questions run 7 to 12 words even when badly clipped ("You, a program to print
+    /// Afibonacci series?"), and the only two that were not questions are "Testing." and
+    /// "Hello, hello.", at one and two. Four sits in the gap with room on both sides.
+    @Test("Your own turn below the word floor is not worth a call")
+    func ownTurnBelowFloorIsSkipped() {
+        var b = TurnBatcher(turnGapSeconds: 2.0, answerOwnQuestions: true)
+        _ = b.question(text: "Testing.", t0: 1, t1: 2, speaker: .you, now: 100.0)
+        #expect(b.tick(now: 103.0) == nil)
+
+        var c = TurnBatcher(turnGapSeconds: 2.0, answerOwnQuestions: true)
+        _ = c.question(text: "Hello, hello.", t0: 1, t1: 2, speaker: .you, now: 100.0)
+        #expect(c.tick(now: 103.0) == nil)
+    }
+
+    @Test("A clipped question of your own still clears the floor")
+    func clippedOwnQuestionClearsFloor() {
+        var b = TurnBatcher(turnGapSeconds: 2.0, answerOwnQuestions: true)
+        // The shortest real one in the recordings, opening words already lost.
+        _ = b.question(text: "You, a program to print Afibonacci series?", t0: 1, t1: 3, speaker: .you, now: 100.0)
+        #expect(b.tick(now: 103.0)?.speaker == .you)
+    }
+
+    /// The floor is a property of the turn, not of one utterance: "mm-hm" twice is still
+    /// filler, but two short lines that together read as a question are not.
+    @Test("The floor counts the whole turn, not each line")
+    func floorCountsTheWholeTurn() {
+        var b = TurnBatcher(turnGapSeconds: 2.5, answerOwnQuestions: true)
+        _ = b.question(text: "So the question", t0: 1.0, t1: 2.0, speaker: .you, now: 100.0)
+        _ = b.question(text: "is about retries.", t0: 2.5, t1: 3.0, speaker: .you, now: 101.0)
+        #expect(b.tick(now: 104.0)?.text == "So the question is about retries.")
+    }
+
+    @Test("The caller is never held to the floor")
+    func callerIsNotHeldToTheFloor() {
+        var b = TurnBatcher(turnGapSeconds: 2.0, answerOwnQuestions: true)
+        _ = b.question(text: "Why?", t0: 1, t1: 2, speaker: .caller, now: 100.0)
+        #expect(b.tick(now: 103.0)?.speaker == .caller, "a one-word question from them is still a question")
+    }
+
+    @Test("A floor of zero puts every one of your turns back through")
+    func floorOfZeroLetsEverythingThrough() {
+        var b = TurnBatcher(turnGapSeconds: 2.0, answerOwnQuestions: true, ownTurnMinimumWords: 0)
+        _ = b.question(text: "Testing.", t0: 1, t1: 2, speaker: .you, now: 100.0)
+        #expect(b.tick(now: 103.0)?.speaker == .you)
+    }
+
     @Test("A short pause keeps lines in the same turn")
     func shortPauseStaysOneTurn() {
         var b = TurnBatcher(turnGapSeconds: 2.5)
