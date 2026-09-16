@@ -37,10 +37,29 @@ public struct TurnBatcher: Sendable {
     public var turnGapSeconds: Double
     /// Whether your own turns are sent for an answer too, not only the caller's.
     public var answerOwnQuestions: Bool
+    /// How many words one of your own turns must carry before it is worth a call. Zero
+    /// sends every one of them.
+    ///
+    /// A length, deliberately, and not a shape: shape is what this had and lost, because the
+    /// recogniser clips exactly the words a shape rule reads — the opening `Can you…` and the
+    /// question mark — so the turns most worth answering were the likeliest to be refused.
+    /// Length survives that clipping. Four is measured rather than picked: across four
+    /// recorded sessions every one of your own turns that was really a question ran 7 to 12
+    /// words even when badly mangled (`You, a program to print Afibonacci series?`), and the
+    /// only two that were not were `Testing.` and `Hello, hello.` at one and two. Nothing
+    /// observed lands on 4, 5 or 6, so the floor sits in the gap rather than on the edge of
+    /// the distribution. The caller is never held to it: a one-word question from them is
+    /// still a question, and it is your own filler that spends the calls.
+    public var ownTurnMinimumWords: Int
 
-    public init(turnGapSeconds: Double = 2.5, answerOwnQuestions: Bool = false) {
+    public init(
+        turnGapSeconds: Double = 2.5,
+        answerOwnQuestions: Bool = false,
+        ownTurnMinimumWords: Int = 4
+    ) {
         self.turnGapSeconds = turnGapSeconds
         self.answerOwnQuestions = answerOwnQuestions
+        self.ownTurnMinimumWords = ownTurnMinimumWords
     }
 
     private struct Open {
@@ -97,7 +116,15 @@ public struct TurnBatcher: Sendable {
         case .caller:
             return turn
         case .you:
-            return answerOwnQuestions ? turn : nil
+            guard answerOwnQuestions, Self.wordCount(text) >= ownTurnMinimumWords else { return nil }
+            return turn
         }
+    }
+
+    /// Whitespace-separated, which is all the floor needs. It is comparing against 4, not
+    /// tokenising for a model, so punctuation and contractions can stay where they are —
+    /// `Hello, hello.` counts two either way.
+    static func wordCount(_ text: String) -> Int {
+        text.split(whereSeparator: \.isWhitespace).count
     }
 }

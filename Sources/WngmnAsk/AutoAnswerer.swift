@@ -43,12 +43,17 @@ public actor AutoAnswerer {
         conversation: CallConversation,
         turnGapSeconds: Double = 2.5,
         answerOwnQuestions: Bool = false,
+        ownTurnMinimumWords: Int = 4,
         isEnabled: @escaping @Sendable () -> Bool,
         respond: @escaping Respond,
         broadcast: @escaping @Sendable (String) -> Void,
         broadcastLive: @escaping @Sendable (String) -> Void
     ) {
-        self.batcher = TurnBatcher(turnGapSeconds: turnGapSeconds, answerOwnQuestions: answerOwnQuestions)
+        self.batcher = TurnBatcher(
+            turnGapSeconds: turnGapSeconds,
+            answerOwnQuestions: answerOwnQuestions,
+            ownTurnMinimumWords: ownTurnMinimumWords
+        )
         self.conversation = conversation
         self.isEnabled = isEnabled
         self.respond = respond
