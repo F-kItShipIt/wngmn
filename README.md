@@ -53,8 +53,8 @@ export ANTHROPIC_API_KEY=sk-ant-...   # For Ask only. Shell profile it.
 <summary>Pin a version, uninstall</summary>
 
 ```sh
-git checkout v0.1.0 && Scripts/install.sh                 # inside a clone
-curl -fsSL https://raw.githubusercontent.com/F-kItShipIt/wngmn/main/Scripts/bootstrap.sh | WNGMN_REF=v0.1.0 bash
+git checkout v0.3.0 && Scripts/install.sh                 # inside a clone
+curl -fsSL https://raw.githubusercontent.com/F-kItShipIt/wngmn/main/Scripts/bootstrap.sh | WNGMN_REF=v0.3.0 bash
 Scripts/install.sh --uninstall
 ```
 
@@ -211,6 +211,16 @@ Same binary, same question format. Only `## Context` changed.
 
 All three ship in [`profiles/`](profiles). Copy one, swap the contents, keep the headings.
 
+## Nobody presses Ask
+
+Tick **auto** and the button stops being the point. The same endpointing that draws the transcript decides when the other person has finished a turn, and the answer is drafted while they are still waiting for yours.
+
+![auto is on: the caller finishes, the answer arrives, nobody touched the page](docs/images/auto.gif)
+
+Your own turns go too, not just theirs — a recogniser clips the opening of a question (`Can you write…` becomes `To, a program to…`) far more often than it loses the whole thing, so the model is given the conversation and left to decide, rather than a rule here guessing from the shape of one line.
+
+That is a call per turn, and the header counts them: `auto: 1 answered · 1 call`. A turn that needs no answer gets none — the model replies `NONE` and the page shows nothing — but the call was still made and still counted, which is why the number is on screen rather than buried.
+
 ## Ask, and your own key
 
 Checked in this order: `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, then `ant auth login`. Find none and it says so at startup, not mid-question: `wngmn: no Anthropic credentials, so Ask will fail on every question.`
@@ -257,6 +267,7 @@ The complete list of things that leave your Mac:
 - Audio: never. Not to transcribe, not to find the end of a question.
 - Ask: the question, the recent ones, your profile. Off to api.anthropic.com when you click.
 - **prefetch**, if you switch it on: every caller question goes the moment it lands, no click. Their words, not just yours.
+- **auto**, if you switch it on: every caller turn goes as it ends, no click, and each answer builds on the ones before it in a running conversation with Claude. Off by default; the loudest change to this list, so it is the one you turn on deliberately.
 - `install-model`: a download from Apple.
 - Transcript: your local disk, and only while `--serve` is up. `--no-log` turns it off.
 - `--listen`: the page goes on your LAN, gated by the URL token.

@@ -27,6 +27,16 @@ public struct ClaudeClient: Sendable {
         self.configuration = configuration
     }
 
+    /// One message in a conversation. `role` is "user" or "assistant".
+    public struct Message: Sendable, Equatable {
+        public let role: String
+        public let text: String
+        public init(role: String, text: String) {
+            self.role = role
+            self.text = text
+        }
+    }
+
     public enum Failure: Error, CustomStringConvertible {
         case noCredentials
         case http(status: Int, detail: String)
@@ -60,38 +70,86 @@ public struct ClaudeClient: Sendable {
     /// region invalidates it on every request, producing a cache that is written each time
     /// and never once read.
     func requestBody(for prompt: AnswerPrompt.Prompt) -> [String: Any] {
+        requestBody(system: prompt.system, messages: [Message(role: "user", text: prompt.user)])
+    }
+
+    /// The request body for a multi-turn conversation.
+    ///
+    /// The profile goes in `system` behind a cache breakpoint, as for a single question. The
+    /// conversation adds a second: a breakpoint on the last message caches the whole prefix
+    /// up to and including this turn, so the next turn reads all of it back rather than
+    /// re-paying for the growing history on every answer. A single-message conversation
+    /// carries no message breakpoint — there is no prefix worth caching yet, and it keeps the
+    /// one-shot ask byte-identical to what it always sent.
+    func requestBody(system: String, messages: [Message]) -> [String: Any] {
+        var wire: [[String: Any]] = messages.map { ["role": $0.role, "content": $0.text] }
+        if messages.count > 1, let last = wire.indices.last {
+            wire[last]["content"] = [[
+                "type": "text",
+                "text": messages[last].text,
+                "cache_control": ["type": "ephemeral"],
+            ]]
+        }
         var body: [String: Any] = [
             "model": configuration.model,
             "max_tokens": configuration.maxTokens,
             "stream": true,
-            "messages": [["role": "user", "content": prompt.user]],
+            "messages": wire,
             "thinking": ["type": "adaptive"],
             "output_config": ["effort": configuration.effort],
             "fallbacks": "default",
         ]
-        if prompt.system.isEmpty {
+        if system.isEmpty {
             return body
         }
-        if prompt.system.count >= Self.minimumCacheableCharacters {
+        if system.count >= Self.minimumCacheableCharacters {
             body["system"] = [[
                 "type": "text",
-                "text": prompt.system,
+                "text": system,
                 "cache_control": ["type": "ephemeral"],
             ]]
         } else {
             // Short enough that a breakpoint would be ignored; sending a plain string keeps
             // the request honest about what it is actually asking for.
-            body["system"] = prompt.system
+            body["system"] = system
         }
         return body
     }
 
-    /// Streams an answer, calling `onText` with each fragment as it arrives.
+    /// Streams an answer to a single question, calling `onText` with each fragment.
     public func stream(
         prompt: AnswerPrompt.Prompt,
         credentials: Credentials,
         onUsage: (@Sendable (Int, Int, Int) -> Void)? = nil,
         onTruncated: (@Sendable () -> Void)? = nil,
+        onText: @escaping @Sendable (String) -> Void
+    ) async throws {
+        try await stream(
+            body: requestBody(for: prompt), credentials: credentials,
+            onUsage: onUsage, onTruncated: onTruncated, onText: onText
+        )
+    }
+
+    /// Streams an answer to a multi-turn conversation.
+    public func stream(
+        system: String,
+        messages: [Message],
+        credentials: Credentials,
+        onUsage: (@Sendable (Int, Int, Int) -> Void)? = nil,
+        onTruncated: (@Sendable () -> Void)? = nil,
+        onText: @escaping @Sendable (String) -> Void
+    ) async throws {
+        try await stream(
+            body: requestBody(system: system, messages: messages), credentials: credentials,
+            onUsage: onUsage, onTruncated: onTruncated, onText: onText
+        )
+    }
+
+    private func stream(
+        body: [String: Any],
+        credentials: Credentials,
+        onUsage: (@Sendable (Int, Int, Int) -> Void)?,
+        onTruncated: (@Sendable () -> Void)?,
         onText: @escaping @Sendable (String) -> Void
     ) async throws {
         var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
@@ -109,7 +167,7 @@ public struct ClaudeClient: Sendable {
         if let existing = credentials.headers()["anthropic-beta"] { betas.append(existing) }
         request.setValue(betas.joined(separator: ","), forHTTPHeaderField: "anthropic-beta")
 
-        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody(for: prompt))
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (bytes, response) = try await URLSession.shared.bytes(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0

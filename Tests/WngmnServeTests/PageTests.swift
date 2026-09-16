@@ -37,6 +37,35 @@ struct PageTests {
         }
     }
 
+    /// Elements the script wires up must be parsed before it runs.
+    ///
+    /// The end-of-call dialogs were once appended after `</script>`, so the `$("endYes")` at
+    /// the top of the wiring returned null, the script threw there, and everything below it —
+    /// including `connect()` on the last line — never ran. The page served 200 and rendered,
+    /// and the transcript never filled in: the same silent failure `scriptParses` exists for,
+    /// reached a different way. Nothing else here could see it. `hasItsElements` asks only
+    /// whether an id is somewhere in the page, and the DOM stub the markdown tests run under
+    /// hands back an element for every id, so a null lookup is exactly what it cannot model.
+    @Test("No element markup trails the script that wires it up")
+    func markupPrecedesTheScript() throws {
+        let html = Page.html
+        let close = try #require(
+            html.range(of: "</script>", options: .backwards),
+            "the page should have a script to begin with"
+        )
+        let strays = html[close.upperBound...].ranges(of: #/id="([^"]+)"/#)
+            .map { String(html[$0]) }
+        #expect(
+            strays.isEmpty,
+            """
+            \(strays.count) element(s) are declared after the page's script: \
+            \(strays.joined(separator: ", ")). The script looks them up as it runs, so a \
+            lookup returns null and throws before connect() opens the event stream. Move \
+            the markup above <script>.
+            """
+        )
+    }
+
     static var nodeIsAvailable: Bool {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -253,8 +282,26 @@ extension PageTests {
     /// helpers be asserted on from Swift without a browser.
     static func evaluate(_ expression: String) throws -> String {
         let script = try #require(PageTests.scriptBody(of: Page.html))
-        let harness = Self.stubs + "\n" + script
-            + "\nprocess.stdout.write(String(\(expression)));\n"
+        // Node exits when its event loop empties, and the page arms a 3 s `setInterval` on its
+        // last line but one, so the loop never empties: `waitUntilExit()` below blocked for as
+        // long as anyone let it, leaking one `node` per call — 34 were found alive from earlier
+        // runs, and one `swift test --filter Page` sat for 30 minutes before it was killed. The
+        // stubs cannot prevent it by returning null from `getElementById`, because they
+        // deliberately hand back an element for every id.
+        //
+        // So the answer is flushed and the process is then ended explicitly, rather than waiting
+        // for a load-time handle to be released. The deadline is the second half of that: a
+        // future handle that outlives the write — a socket, an unresolved promise — fails this
+        // loudly in 15 s instead of hanging the suite with no output at all.
+        let harness = Self.stubs + "\n" + script + """
+
+        setTimeout(() => {
+          process.stderr.write("harness: the page script was still running after 15 s\\n");
+          process.exit(3);
+        }, 15000);
+        process.stdout.write(String(\(expression)), () => process.exit(0));
+
+        """
 
         let file = FileManager.default.temporaryDirectory
             .appendingPathComponent("wngmn-page-\(UUID().uuidString).js")
@@ -399,6 +446,17 @@ struct ControlStateTests {
         #expect(
             try PageTests.evaluate("JSON.stringify(parseControlDetail('mic=live tap=listening'))")
                 == #"{"mic":"live","tap":"listening"}"#
+        )
+    }
+
+    @Test("The auto flag is read alongside mic and tap", .enabled(if: PageTests.nodeIsAvailable))
+    func parsesAuto() throws {
+        #expect(
+            try PageTests.evaluate("JSON.stringify(parseControlDetail('mic=live tap=listening auto=on'))")
+                == #"{"mic":"live","tap":"listening","auto":"on"}"#
+        )
+        #expect(
+            try PageTests.evaluate("parseControlDetail('mic=live tap=listening auto=off').auto") == "off"
         )
     }
 

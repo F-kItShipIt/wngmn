@@ -15,16 +15,20 @@ import Synchronization
 public final class CaptureControl: Sendable {
     private let mic = Atomic<Bool>(false)
     private let tap = Atomic<Bool>(false)
+    private let auto = Atomic<Bool>(false)
 
-    public init(micMuted: Bool = false, tapPaused: Bool = false) {
+    public init(micMuted: Bool = false, tapPaused: Bool = false, autoAnswer: Bool = false) {
         mic.store(micMuted, ordering: .relaxed)
         tap.store(tapPaused, ordering: .relaxed)
+        auto.store(autoAnswer, ordering: .relaxed)
     }
 
     /// The microphone is not being captured at all.
     public var micMuted: Bool { mic.load(ordering: .relaxed) }
     /// Tap audio is being discarded rather than transcribed.
     public var tapPaused: Bool { tap.load(ordering: .relaxed) }
+    /// Each caller turn is answered automatically, without a press of Ask. Off by default.
+    public var autoAnswer: Bool { auto.load(ordering: .relaxed) }
 
     /// Returns whether the value actually changed, so a redundant toggle does not restart a
     /// device or flush an endpointer for nothing.
@@ -38,10 +42,16 @@ public final class CaptureControl: Sendable {
         tap.exchange(paused, ordering: .relaxed) != paused
     }
 
+    @discardableResult
+    public func setAutoAnswer(_ on: Bool) -> Bool {
+        auto.exchange(on, ordering: .relaxed) != on
+    }
+
     /// Carried on the `control` status line so a second viewer reflects the change rather
     /// than showing stale state.
     public var stateDescription: String {
-        "mic=\(micMuted ? "muted" : "live") tap=\(tapPaused ? "paused" : "listening")"
+        "mic=\(micMuted ? "muted" : "live") tap=\(tapPaused ? "paused" : "listening") "
+            + "auto=\(autoAnswer ? "on" : "off")"
     }
 }
 
@@ -50,10 +60,12 @@ public enum ControlRequest {
     public struct Update: Sendable, Equatable {
         public var micMuted: Bool?
         public var tapPaused: Bool?
+        public var autoAnswer: Bool?
 
-        public init(micMuted: Bool? = nil, tapPaused: Bool? = nil) {
+        public init(micMuted: Bool? = nil, tapPaused: Bool? = nil, autoAnswer: Bool? = nil) {
             self.micMuted = micMuted
             self.tapPaused = tapPaused
+            self.autoAnswer = autoAnswer
         }
     }
 
@@ -86,7 +98,8 @@ public enum ControlRequest {
 
         return Update(
             micMuted: try flag("mic", on: "muted", off: "live"),
-            tapPaused: try flag("tap", on: "paused", off: "listening")
+            tapPaused: try flag("tap", on: "paused", off: "listening"),
+            autoAnswer: try flag("auto", on: "on", off: "off")
         )
     }
 }

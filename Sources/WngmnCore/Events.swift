@@ -131,7 +131,11 @@ public struct EventEncoder: Sendable {
     /// Timestamps carry at most millisecond meaning; trimming keeps lines short and makes
     /// golden-file comparison stable against floating-point noise. Whole values print
     /// without a trailing `.0` so a sample rate reads as `48000`.
-    static func number(_ v: Double) -> String {
+    /// Public because an answer key has to be spelled the same way a question line was, and
+    /// `AutoAnswerer` builds that key in another module. Raw interpolation there produced
+    /// `you@58.10982145766667` for a line the page had already been given as `58.11`, so the
+    /// answer matched no row and was dropped after the model call had been made and charged.
+    public static func number(_ v: Double) -> String {
         guard v.isFinite else { return "0" }
         let rounded = (v * 1000).rounded() / 1000
         if rounded == rounded.rounded(), abs(rounded) < 1e15 {

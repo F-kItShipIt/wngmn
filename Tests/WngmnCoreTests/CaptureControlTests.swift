@@ -9,7 +9,7 @@ struct CaptureControlTests {
         let control = CaptureControl()
         #expect(!control.micMuted)
         #expect(!control.tapPaused)
-        #expect(control.stateDescription == "mic=live tap=listening")
+        #expect(control.stateDescription == "mic=live tap=listening auto=off")
     }
 
     @Test("Starting paused is expressible at construction")
@@ -17,7 +17,7 @@ struct CaptureControlTests {
         let control = CaptureControl(micMuted: true, tapPaused: true)
         #expect(control.micMuted)
         #expect(control.tapPaused)
-        #expect(control.stateDescription == "mic=muted tap=paused")
+        #expect(control.stateDescription == "mic=muted tap=paused auto=off")
     }
 
     /// The caller needs to know whether anything actually changed: a redundant toggle must
@@ -39,6 +39,8 @@ struct ControlPayloadTests {
     func partialUpdates() throws {
         #expect(try ControlRequest.parse(#"{"mic":"muted"}"#) == .init(micMuted: true, tapPaused: nil))
         #expect(try ControlRequest.parse(#"{"tap":"paused"}"#) == .init(micMuted: nil, tapPaused: true))
+        #expect(try ControlRequest.parse(#"{"auto":"on"}"#) == .init(autoAnswer: true))
+        #expect(try ControlRequest.parse(#"{"auto":"off"}"#) == .init(autoAnswer: false))
         #expect(try ControlRequest.parse("{}") == .init(micMuted: nil, tapPaused: nil))
     }
 
@@ -56,6 +58,7 @@ struct ControlPayloadTests {
     func rejectsUnknown() {
         #expect(throws: ControlRequest.Failure.self) { try ControlRequest.parse(#"{"mic":"maybe"}"#) }
         #expect(throws: ControlRequest.Failure.self) { try ControlRequest.parse(#"{"tap":"off"}"#) }
+        #expect(throws: ControlRequest.Failure.self) { try ControlRequest.parse(#"{"auto":"maybe"}"#) }
         #expect(throws: ControlRequest.Failure.self) { try ControlRequest.parse("not json") }
         #expect(throws: ControlRequest.Failure.self) { try ControlRequest.parse(#"{"mic":true}"#) }
     }
