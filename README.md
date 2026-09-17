@@ -53,8 +53,8 @@ export ANTHROPIC_API_KEY=sk-ant-...   # For Ask only. Shell profile it.
 <summary>Pin a version, uninstall</summary>
 
 ```sh
-git checkout v0.3.0 && Scripts/install.sh                 # inside a clone
-curl -fsSL https://raw.githubusercontent.com/F-kItShipIt/wngmn/main/Scripts/bootstrap.sh | WNGMN_REF=v0.3.0 bash
+git checkout v0.3.1 && Scripts/install.sh                 # inside a clone
+curl -fsSL https://raw.githubusercontent.com/F-kItShipIt/wngmn/main/Scripts/bootstrap.sh | WNGMN_REF=v0.3.1 bash
 Scripts/install.sh --uninstall
 ```
 
