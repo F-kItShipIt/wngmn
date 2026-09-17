@@ -210,6 +210,50 @@ able to see that it does not end.
 
 ---
 
+## Auto, and the end-of-call notes
+
+**Auto** answers without anyone pressing anything. The endpointing that draws the transcript
+already knows when a turn is over, so the answer is drafted while the other person is still
+waiting for yours, and lands on the stage over the same `answer_done` frame a pressed Ask
+uses. There is no second code path and no new surface — a page that has auto on and a page
+that does not are rendering the same frames.
+
+It is not a property of your browser, and this is where it differs from the two toggles
+above. **sync** and **prefetch** are per-page and start off on every reload; auto is posted
+to `/control` and held on the server next to the mic and tap state, so ticking it on the
+phone ticks it on the laptop, and both are told so in the same `control` line. It still
+starts off on every run — nothing is sent until you ask for it.
+
+**A turn, not a line.** Answering each endpoint separately would answer half-questions, so
+the batcher holds one speaker's lines open until the turn ends — the other speaker starts, or
+2.5 s of silence passes — and hands over the whole thing at once. Two questions 1.2 s apart
+are one turn and one call.
+
+**Your own turns go too**, above a floor of four words. `--auto-own-min-words` moves the
+floor and `0` removes it; the caller is never held to it, because a one-word question from
+them is still a question. A shape rule was tried here first — a question mark, or an opening
+interrogative — and removed: the recogniser clips exactly the words it read, so `Can you
+write a program to…` arrives as `To, a program to…` and the turns most worth answering were
+the likeliest to be refused. Length survives that clipping, and the model, which sees the
+whole conversation, decides the rest by replying `NONE`.
+
+A `NONE` renders nothing. The call was still made, so it is still counted, and the counter on
+the panel — `auto: 1 answered · 1 call` — exists to make that visible rather than letting it
+accumulate quietly.
+
+**The notes** are one pass over the whole conversation, from **end & summarise**, or from the
+prompt that appears after 20 s of quiet. That prompt waits until auto has actually run: the
+ledger is built from answered turns, so a call that never turned auto on has nothing to
+summarise, and it says so rather than summarising nothing. **No** snoozes it until the next
+question resets the clock.
+
+The notes card's **copy** button puts the markdown on the clipboard, not the rendered markup
+— the same choice the code blocks make, and the form that survives a paste into a doc or a
+ticket. It is hidden while the summary is still being written and when one has failed, since
+neither has anything worth copying.
+
+---
+
 ## How an answer renders
 
 Answers arrive as markdown and are rendered by hand, block by block, because the page loads
