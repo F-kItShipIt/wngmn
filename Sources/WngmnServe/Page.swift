@@ -289,11 +289,14 @@ body.resizing { user-select:none; cursor:col-resize; }
   background:color-mix(in oklab, var(--ink) 4%, transparent);
 }
 .answer .code .lang { font-size:11px; color:var(--muted); letter-spacing:.04em; }
-.answer .code .copy {
+/* #notesCopy joins the selector rather than repeating the declarations, and joins it rather
+   than loosening it to a bare `.copy`: the same four lines, and the code block's specificity
+   is left exactly where it was. */
+.answer .code .copy, #notesCopy {
   font:inherit; font-size:11px; padding:1px 8px; border-radius:4px; cursor:pointer;
   border:1px solid var(--rule); color:var(--muted); background:transparent;
 }
-.answer .code .copy:hover { color:var(--ink); border-color:var(--series); }
+.answer .code .copy:hover, #notesCopy:hover { color:var(--ink); border-color:var(--series); }
 /* Long lines scroll inside the block. The transcript column must never scroll sideways —
    the user is reading it aloud and cannot go hunting for the rest of a sentence. */
 .answer .code pre { margin:0; padding:8px 10px; overflow-x:auto; }
@@ -386,6 +389,9 @@ summary { cursor:pointer; }
   #notesCard h2 { margin:0 0 12px; font-size:16px; }
   #notesClose { float:right; border:0; background:transparent; color:var(--ink-2);
     font-size:20px; line-height:1; cursor:pointer; }
+  /* Floated after the close button, so it lands to its left; nudged down to sit on the
+     heading's baseline rather than the taller ×. */
+  #notesCopy { float:right; margin:3px 10px 0 0; }
   #notesBody .pending { color:var(--muted); }
   #notesBody .failed { color:var(--crit); }
 </style>
@@ -490,6 +496,7 @@ summary { cursor:pointer; }
 <div id="notes" role="dialog" aria-modal="true" aria-label="Meeting notes">
   <div id="notesCard">
     <button id="notesClose" type="button" aria-label="Close">×</button>
+    <button id="notesCopy" type="button" hidden>copy</button>
     <h2>Meeting notes</h2>
     <div id="notesBody"></div>
   </div>
@@ -1333,14 +1340,22 @@ $("stage").addEventListener("click", ev => {
   const button = ev.target.closest && ev.target.closest(".copy");
   if (!button) return;
   const block = button.closest(".code").querySelector("code");
-  navigator.clipboard.writeText(block.textContent).then(
+  copyToClipboard(button, block.textContent);
+});
+
+// Shared by the code blocks and the notes card. The button's own label is the only feedback
+// the page gives — there is no toast — so the two must not drift apart. writeText rejects
+// rather than throws when the document is not focused or the permission is refused, and a
+// button that silently did nothing would read as a broken page, so the failure is shown.
+function copyToClipboard(button, text) {
+  navigator.clipboard.writeText(text).then(
     () => {
       button.textContent = "copied";
       setTimeout(() => { button.textContent = "copy"; }, 1200);
     },
     () => { button.textContent = "failed"; }
   );
-});
+}
 
 // Fires the request and returns. The answer is rendered from `/events` like everything
 // else, so a laptop and a phone show the same thing because they are running the same code
@@ -1621,7 +1636,7 @@ function handleEvent(e) {
         break;
       }
       case "summary_pending": autoUsed = true; showNotes('<div class="pending">Writing notes…</div>'); break;
-      case "summary_done": showNotes(md(e.text || "")); break;
+      case "summary_done": showNotes(md(e.text || ""), e.text || ""); break;
       case "summary_failed": showNotes(`<div class="failed">${esc(e.detail || "notes could not be written")}</div>`); break;
       case "answer":
       case "answer_done":
@@ -1660,11 +1675,25 @@ const CALL_IDLE_MS = 20000;
 let lastActivity = Date.now();
 let autoUsed = false;
 let endPromptSnoozed = false;
+let notesSource = "";
 
 function noteActivity() { lastActivity = Date.now(); endPromptSnoozed = false; }
 function hideEndPrompt() { $("endprompt").classList.remove("show"); }
 function notesOpen() { return $("notes").classList.contains("show"); }
-function showNotes(html) { $("notesBody").innerHTML = html; $("notes").classList.add("show"); hideEndPrompt(); }
+// `source` is the markdown the notes were rendered from, and what the copy button puts on
+// the clipboard — the same choice the code blocks make, where the clipboard gets the source
+// rather than the escaped markup. Notes are pasted into a doc or a message, so the markdown
+// is the useful form. Without it (writing…, or a failure) there is nothing worth copying
+// and the button stays hidden rather than offering an empty clipboard.
+function showNotes(html, source) {
+  $("notesBody").innerHTML = html;
+  notesSource = source || "";
+  const copy = $("notesCopy");
+  copy.hidden = !notesSource;
+  copy.textContent = "copy";
+  $("notes").classList.add("show");
+  hideEndPrompt();
+}
 
 function requestSummary() {
   showNotes('<div class="pending">Writing notes…</div>');
@@ -1677,6 +1706,7 @@ function requestSummary() {
 $("endbtn").addEventListener("click", requestSummary);
 $("endYes").addEventListener("click", requestSummary);
 $("endNo").addEventListener("click", () => { hideEndPrompt(); endPromptSnoozed = true; });
+$("notesCopy").addEventListener("click", () => copyToClipboard($("notesCopy"), notesSource));
 $("notesClose").addEventListener("click", () => $("notes").classList.remove("show"));
 $("notes").addEventListener("click", (e) => { if (e.target.id === "notes") $("notes").classList.remove("show"); });
 
