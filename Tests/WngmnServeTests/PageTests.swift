@@ -435,6 +435,60 @@ struct SpeakerRevisionTests {
 
 /// The page learns the capture state from a `control` status line, so a second viewer
 /// (a phone propped beside the laptop) reflects a mute made on the first.
+/// Copying the meeting notes.
+///
+/// The clipboard call itself needs a browser and goes untested, as the DOM wiring does. What
+/// is asserted here is the part that decides *what* would be copied and *when* the button is
+/// offered, which is ordinary logic and belongs in Swift with the rest.
+@Suite("Notes copy")
+struct NotesCopyTests {
+    @Test("The clipboard gets the markdown, not the rendered markup")
+    func copiesTheSource() throws {
+        // The same choice the code blocks make: the source is what is useful to paste.
+        let source = "## Decisions\\n\\n- Ship it"
+        let got = try PageTests.evaluate(
+            "(() => { showNotes(md(\"\(source)\"), \"\(source)\"); return notesSource; })()"
+        )
+        #expect(got == "## Decisions\n\n- Ship it")
+        #expect(!got.contains("<h2>"), "the rendered markup must not reach the clipboard")
+    }
+
+    @Test("Notes that arrived offer the button")
+    func shownWhenThereAreNotes() throws {
+        let hidden = try PageTests.evaluate(
+            "(() => { showNotes(md(\"# Notes\"), \"# Notes\"); return document.getElementById(\"notesCopy\").hidden; })()"
+        )
+        #expect(hidden == "false")
+    }
+
+    /// "Writing notes…" and a failure are both rendered through `showNotes`, and neither has
+    /// anything worth putting on the clipboard.
+    @Test("A pending or failed summary offers nothing to copy")
+    func hiddenWhileThereIsNothingToCopy() throws {
+        let pending = try PageTests.evaluate(
+            "(() => { showNotes('<div class=\"pending\">Writing notes…</div>'); "
+            + "return document.getElementById(\"notesCopy\").hidden + \"/\" + notesSource.length; })()"
+        )
+        #expect(pending == "true/0")
+    }
+
+    /// The label is the only feedback there is, so a second copy has to start from "copy"
+    /// rather than from the "copied" the last one left behind.
+    @Test("Reopening the notes resets the button's label")
+    func labelResets() throws {
+        let label = try PageTests.evaluate(
+            "(() => { const b = document.getElementById(\"notesCopy\"); b.textContent = \"copied\"; "
+            + "showNotes(md(\"# Notes\"), \"# Notes\"); return b.textContent; })()"
+        )
+        #expect(label == "copy")
+    }
+
+    @Test("The page carries the button")
+    func pageCarriesTheButton() {
+        #expect(Page.html.contains("id=\"notesCopy\""))
+    }
+}
+
 @Suite("Control state")
 struct ControlStateTests {
     @Test("Both flags are read from the status detail", .enabled(if: PageTests.nodeIsAvailable))
