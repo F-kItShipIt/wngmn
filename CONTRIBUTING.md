@@ -50,11 +50,11 @@ The five targets and what each may touch:
 
 | Target | Contents | Constraint |
 | --- | --- | --- |
-| `WngmnCore` | Endpointer, question assembler, text normaliser, ring buffer, options, events | Deliberately free of Core Audio and Speech, so its tests run in any terminal |
-| `WngmnAudio` | Process tap, clocks, capture timeline, transcriber, pipeline, offline runner | The only target that touches the system |
+| `WngmnCore` | Endpointer, question assembler, turn batcher, answer queue, text normaliser, ring buffer, options, events, and what a screenshot decides without a screen | Deliberately free of Core Audio and Speech, so its tests run in any terminal |
+| `WngmnAudio` | Process tap, clocks, capture timeline, transcriber, pipeline, offline runner | The only target that touches the audio system |
 | `WngmnServe` | HTTP/1.1 + SSE listener and the embedded page | Depends on `WngmnCore` only — it renders events, it does not know where they came from |
 | `WngmnAsk` | Claude credentials, prompt assembly, streaming | Kept apart from `WngmnServe` on purpose, so the Claude dependency stays on one side of that line |
-| `wngmn` | The executable: `run`, `selftest`, `devices`, `offline`, `miccheck`, `stop`, `install-model` | Wiring and command dispatch |
+| `wngmn` | The executable: `run`, `selftest`, `devices`, `offline`, `miccheck`, `stop`, `shot`, `install-model` | Wiring and command dispatch. It has no test target, so anything it would have to *decide* goes in `WngmnCore` — `shot`'s URL, what each reply means and its argument lists all live there, and what is left here is the process spawn and the network call |
 
 If you find yourself importing AVFoundation or Speech into `WngmnCore`, that is the signal
 that the logic and the system call have not been separated yet, not that the rule is wrong.
@@ -103,7 +103,9 @@ swift test --filter OfflinePipelineTests # offline replay; needs the en-US model
    only tier that exercises TCC, device changes mid-call, and genuine conversational speech,
    and it is not automatable. If you change anything in the tap, the aggregate device, the
    keepalive IOProc or the route watcher, rehearse it and say so in the pull request — the
-   unit tiers cannot tell you that a tap stopped clocking.
+   unit tiers cannot tell you that a tap stopped clocking. `wngmn shot` is in this tier too:
+   taking the picture needs a display, a Screen Recording grant and, for `--region`, a person
+   to drag, so everything up to and after the capture is unit-tested and the capture is not.
 
 ### Permission, and why `selftest` plays a tone
 

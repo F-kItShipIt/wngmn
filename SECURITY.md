@@ -77,12 +77,21 @@ What it is **not** a defence against, stated plainly so nobody relies on it:
 
 * **Audio never leaves the machine.** Transcription is Apple's on-device `SpeechAnalyzer` and
   `SpeechTranscriber`. The only outbound request the binary makes is the streaming POST to
-  `https://api.anthropic.com/v1/messages` in `Sources/WngmnAsk/ClaudeClient.swift`, and it
-  carries text: the question, the recent transcript lines the page sent with it, and your
-  profile or notes. `wngmn install-model` asks macOS to fetch a speech model through
+  `https://api.anthropic.com/v1/messages` in `Sources/WngmnAsk/ClaudeClient.swift`. For an
+  Ask it carries text: the question, the recent transcript lines the page sent with it, and
+  your profile or notes. With **auto** on it carries the running conversation — every turn
+  that closed, yours and theirs, and every answer so far. And after a `wngmn shot` it carries
+  a **picture of your screen**, which then stays in that conversation and is sent again with
+  every later turn until the call ends. A picture is not like a sentence: it takes whatever
+  else was on the display with it. `wngmn install-model` asks macOS to fetch a speech model through
   `AssetInventory`; that is an OS asset download, not a transmission of anything of yours.
 * **No audio is written to disk.** Buffers are processed in memory and discarded. The only
   audio file the code opens is the one you hand to `wngmn offline <file>`, for reading.
+* **A screenshot is on disk only while it is being taken.** `screencapture` writes it into a
+  mode-0700 directory under the temporary directory; wngmn reads it, shrinks it if it is over
+  2576 px, and deletes file and directory before anything is sent. After that it is held in
+  memory, base64-encoded, for the life of the process. It is never written to the session
+  log — see *What is on disk*.
 * **No telemetry, no analytics, no crash reporting, no update check.** There is no other URL
   in the source.
 * **No third-party dependencies.** `Package.swift` declares none. The HTTP/1.1 server, the
@@ -108,6 +117,15 @@ history plus every completed answer. A hostile *web page* cannot, because no COR
 ever sent; the exposure is to code already running under your account. Closing it means
 issuing a loopback token too, which would break the bookmarked URL that makes the tool
 pleasant to use, and that trade has not been made.
+
+**The same is true of `POST /shot`, and it matters more.** On loopback any process running as
+you can post to it, and the running wngmn will then photograph your screen and send the
+picture to Anthropic on your credential. That is the design — it is how `wngmn shot`, bound to
+a key, reaches it — and it is the same population that could already read the transcript, but
+what it can now cause is different in kind: not a read of what was said, but a capture of
+whatever is on the display. Code running under your account can take screenshots by itself,
+so this does not hand it a capability; it hands it *your API key's* eyes. If that matters on
+your machine, do not run with `--serve` while untrusted code is running as you.
 
 **Reading is not same-origin checked; only state-changing POSTs are.** Refusing a cross-site
 `GET` would break following a link to the page, so `/` and `/events` are served to any GET
@@ -144,8 +162,12 @@ the same token every run once stored (`~/Library/Application Support/wngmn/token
 `--token` takes one of your own; the binary warns at startup if you give it one shorter than
 16 characters. An explicit `--token` also lands in your shell history.
 
-**Anyone holding the token can do everything the owner can**: read the whole transcript and
-every answer, pause the tap and mute the microphone through `/control`, and press Ask. Each
+**Anyone holding the token can do everything the owner can but one**: read the whole
+transcript and every answer, pause the tap and mute the microphone through `/control`, and
+press Ask. The exception is `/shot`. It is refused unless the connection comes from this
+machine — `127.0.0.1` or `::1` — whatever the listener is bound to and whatever token is
+presented, so a token that has leaked to the network cannot be used to make the Mac
+photograph its own screen. Each
 ask starts a streaming Claude call with a 64,000-token ceiling, charged to your credential.
 There is no rate limit, no cap on simultaneous asks and no spend cap, so a loop of POSTs runs
 up a real bill and can saturate the key in the middle of a call.
@@ -170,7 +192,10 @@ value.
 **The session log holds questions and complete model answers, and is kept indefinitely.**
 With `--serve`, logging is on by default: every replayable event is appended to
 `~/Library/Application Support/wngmn/sessions/<timestamp>.jsonl`, and that includes the
-`answer_done` frame carrying the full answer text. Files are created mode 0600 in a 0700
+`answer_done` frame carrying the full answer text — including the answer to a screenshot,
+which can quote what was on the screen. The screenshot itself is never logged: its `shot`
+frame records when it was taken, whether it was the screen or a region, and its size in pixels
+and bytes. Files are created mode 0600 in a 0700
 directory, so another account cannot read them — but nothing ever deletes them. There is no
 purge command, no age-based sweep, and `wngmn stop` does not touch sessions. A year of
 confidential interviews accumulates in plaintext under your home directory. `--no-log` turns

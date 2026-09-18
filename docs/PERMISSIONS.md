@@ -11,7 +11,7 @@ Read it once. Then run `wngmn selftest` on the morning of every interview.
 
 ## Who holds the grant
 
-macOS grants System Audio Recording and Microphone to a *process*, and a command-line binary
+macOS grants System Audio Recording, Microphone and Screen Recording to a *process*, and a command-line binary
 has no identity of its own. The grant attaches to the **parent process** — the app that
 launched it. Start `wngmn` from a shell and the grant belongs to Terminal, iTerm, Ghostty or
 whatever else is running the shell; wngmn itself never appears in System Settings at all.
@@ -144,6 +144,45 @@ Two traps around it, both already hit:
   ```
 
   If you see that line, `--mic` will not work no matter what System Settings says.
+
+## Screen Recording, for `wngmn shot`
+
+Only relevant to `wngmn shot`. Nothing else in wngmn looks at the screen.
+
+**The running wngmn takes the picture, not the command you bound to a key.** `wngmn shot`
+only posts a few bytes to the wngmn that is already serving; that process spawns
+`/usr/sbin/screencapture`. So the grant that matters is the one held by whatever launched the
+*long-running* wngmn — the same subject as the audio grant, by the same rule as above. From a
+shell that is your terminal. Your launcher — Shortcuts, Raycast, skhd — needs no grant at all.
+
+**It sits in the same Settings pane as the audio grant, and it is a different grant.** System
+Settings → Privacy & Security → Screen & System Audio Recording has two lists. An app under
+*System Audio Recording Only* can run the tap and cannot take a screenshot. It has to be in
+the upper list. A terminal you have ever used to share your screen is usually already there.
+
+**A denial is silent here too, and looks like your wallpaper.** Without the grant
+`screencapture` does not fail: it exits 0 and writes a picture of the desktop with no windows
+on it — the menu bar, the wallpaper, and nothing you were looking at. Sent as it is, that would
+be a confident answer about an empty desk. So wngmn asks first: before every shot, until it
+has once been told yes, it calls `CGPreflightScreenCaptureAccess`, which never prompts. If the
+answer is no, nothing is captured and nothing is sent; the shot appears on the page as a row
+with the reason on it — on the stage, not only in the side panel, which a phone does not show
+— and the first refusal of a run also calls `CGRequestScreenCaptureAccess`, because the
+preflight alone never makes macOS add the app to the list for you to tick.
+
+The grant is read when the app starts. After ticking it, quit and reopen the terminal, then
+start wngmn again.
+
+**Rehearse it.** Press both keys once before the call, the way you run `selftest`. The first
+shot of a machine's life is when macOS asks, and the middle of an interview is the wrong time
+to be reading a permissions dialog. macOS also re-confirms this category roughly monthly — see
+*The roughly thirty-day reauthorisation* below — and that prompt is just as badly timed.
+
+Not verified on the machine this was written on, because wngmn is launched from a shell there:
+how long the grant survives for the *bundle* launched through LaunchServices. `install.sh`
+ad-hoc signs, and an ad-hoc signature's designated requirement is the code hash, so a rebuilt
+bundle may be a new subject to TCC and need ticking again. If you run it that way, check after
+every install.
 
 ## Audio routing: two traps that are not permissions
 

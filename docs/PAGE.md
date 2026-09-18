@@ -171,6 +171,33 @@ otherwise cost an API call on a line you were only glancing at.
 
 The row currently on the stage is tinted, as is the row selected with `j`/`k`.
 
+### A screenshot row
+
+The one row that did not come from the recogniser. `wngmn shot` makes it: the gutter says
+**Screen**, the text is what was taken and how big — `Screenshot · region · 1500×900` — and
+there is no latency tag and no Ask button, because it has no latency and it is already asked.
+The keypress was the Ask.
+
+That is literal. The row is born asked, with no answer, which is the only way this page says
+"Asking…" — it has no pending state of its own — and it is what keeps `Enter` on the selected
+line, the phone caption's button and the stage's own Ask from posting the row's *label* to
+`/ask` as though somebody had said it. A manual Ask does not see the picture, so the label is
+also left out of the six lines a later Ask sends as context.
+
+It takes the stage the moment it arrives, whatever was there. The shutter is silenced, so that
+is the only sign the key did anything. A replayed frame finds the row already present and
+leaves it, and the stage, alone. Its answer then follows the ordinary rule: you have not been
+moved off it, so it lands under your eyes; if you have clicked away, it waits for you.
+
+Every shot row ends, one way or another. An answer; a failure with its reason — *Screen
+Recording is not granted*, *HTTP 413* — shown on the stage, not only in the side panel, which
+a phone does not have; or, for a shot overtaken by a newer one before it was answered,
+*Answered with the screenshot after this one*. The picture is still in the conversation that
+later answer was written from.
+
+Screenshot rows are not questions: they are left out of the header's count, the latency chart
+and its tiles, **prefetch**, and the search for a row to revise.
+
 ---
 
 ## Ask, and prefetch
@@ -235,6 +262,16 @@ rather than working through a backlog. The one answer is attached to the last of
 the earlier ones are context and get none of their own, which is why a row in the middle of a
 fast exchange can stay unanswered while the counter shows a single call.
 
+**A screenshot cuts in.** It is the one thing that does not wait: it cancels the answer that
+is out — usually an answer to "let me paste this here" — and goes at once, with whatever was
+held behind it. The cancelled turn stays in the conversation as context, with no reply of its
+own. It is also the one thing the toggle does not govern: auto decides what happens to speech
+that was overheard, and a keypress is asking. With auto off a shot is answered, alone, and
+the counter appears, because a call was made. And it stays: the picture is in the
+conversation until the call ends, so "can you do that in place?", said aloud a minute later
+with auto on, has its "that". The conversation keeps the newest twenty pictures; an older one
+keeps its place and its answer and loses its image.
+
 **Your own turns go too**, above a floor of four words. `--auto-own-min-words` moves the
 floor and `0` removes it; the caller is never held to it, because a one-word question from
 them is still a question. A shape rule was tried here first — a question mark, or an opening
@@ -248,9 +285,9 @@ the panel — `auto: 1 answered · 1 call` — exists to make that visible rathe
 accumulate quietly.
 
 **The notes** are one pass over the whole conversation, from **end & summarise**, or from the
-prompt that appears after 20 s of quiet. That prompt waits until auto has actually run: the
-ledger is built from answered turns, so a call that never turned auto on has nothing to
-summarise, and it says so rather than summarising nothing. **No** snoozes it until the next
+prompt that appears after 20 s of quiet. That prompt waits until something has been sent: the
+ledger is built from what auto answered and from screenshots, so a call with neither has
+nothing to summarise, and it says so rather than summarising nothing. **No** snoozes it until the next
 question resets the clock.
 
 The notes card's **copy** button puts the markdown on the clipboard, not the rendered markup
@@ -331,7 +368,7 @@ and returns the current state.
 | Key | |
 | --- | --- |
 | `j` / `k` | select the next / previous question |
-| `Enter` | ask the selected question |
+| `Enter` | ask the selected question (a screenshot row is already asked, so it only comes to the stage) |
 | `p` | pause or resume transcribing the caller |
 | `m` | mute or unmute your microphone |
 | `\` | show or hide the side panel |
@@ -377,7 +414,8 @@ This is the part worth reading carefully, because the number on the chart is not
 on the row.
 
 **The bars are `ms`** — the per-question endpoint-to-final latency, one bar per question,
-the last 40. Caller questions only.
+the last 40. Caller questions only — not your own lines, and not screenshot rows, which have
+no latency to plot.
 
 **The budget is 700 ms, end to end**: the journalist's last syllable to the question being on
 screen, Zoom or Meet transport included.

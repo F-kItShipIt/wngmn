@@ -50,7 +50,7 @@ They do not know about each other. The executable is the only place the three me
 
 `Endpointer`, `QuestionAssembler`, `AudioRingBuffer`, `Event`/`EventEncoder`,
 `TextNormalizer`, `TermList`, `Profile`/`ProfileSource`, `Options`, `CaptureControl`,
-`MicCalibration`, `RunningProcesses`, `TurnBatcher`, `AnswerQueue`.
+`MicCalibration`, `RunningProcesses`, `TurnBatcher`, `AnswerQueue`, `ShotCapture`.
 
 Deliberately free of Core Audio and `Speech`. The reason is testability under the permission
 model: System Audio Recording is granted to a *parent process*, so a test bundle run from an
@@ -63,6 +63,12 @@ permission and no microphone. Its fixtures are headerless 16 kHz mono little-end
 `AudioRingBuffer` lives here despite being the audio hot path, because it is pure memory and
 atomics, and because its overrun and wraparound behaviour is exactly the kind of thing that
 should be asserted rather than observed on a live call.
+
+`ShotCapture` is here because the executable has no test target. Taking a screenshot needs a
+display, a permission and sometimes a person; what to run, whether to shrink the result,
+whether it fits the API, where `wngmn shot` posts and what each reply means are arithmetic
+and strings, so they are decided here and the executable is left with a process spawn and a
+network call.
 
 `TurnBatcher` and `AnswerQueue` are here for the same reason, one level up. When a turn is
 over, and what may be sent while a request is already out, are decisions — and both are value
@@ -126,13 +132,22 @@ over and `AnswerQueue` decides what is sent, both pure and both in `WngmnCore`.
 
 ### wngmn — the executable
 
-`Wngmn.swift` (argument dispatch and wiring), `Selftest`, `Devices`, `MicCheck`.
+`Wngmn.swift` (argument dispatch and wiring), `Selftest`, `Devices`, `MicCheck`, `Shot`.
 
 Its job is joining: it builds the `EventWriter` with an observer closure that forwards every
 event to the `TranscriptServer`, builds the `AskHandler` that closes over `WngmnAsk`, shares
 one `CaptureTimeline` and one `CaptureControl` between the tap and the microphone, and
 installs the `TeardownCoordinator`. Commands: `run` (the default), `selftest`, `devices`,
-`offline <file>`, `miccheck`, `stop`, `install-model`.
+`offline <file>`, `miccheck`, `stop`, `shot`, `install-model`.
+
+`shot` is the odd one: a client. It leaves `main` beside `help`, before the profile, the
+server and the signal handlers exist, because everywhere else `--port` and `--token` mean
+"serve" and `main` starts the server before it looks at the command — dispatched with the
+others, it would try to bind the port it is posting to. `Shot.swift` also holds the other
+half, `ShotTaker`, which runs in the long-lived process: it spawns `screencapture` and `sips`
+through `BoundedProcess`, the only place in wngmn a child is given a deadline, because it is
+the only child that waits for a person. The `CaptureTimeline` is made in `main` rather than
+in `runCapture` so that a shot can be stamped on the clock its neighbouring rows use.
 
 ## The live data path
 
@@ -263,8 +278,18 @@ holds it to one: `question` and `tick` enqueue and return, a single drain task o
 is out, and everything that closed meanwhile goes as one batch when it settles. A cancel is
 recorded by request id rather than applied to a task, because it can arrive in the gap
 between the queue handing out an id and the request's task existing. The auto toggle is read
-when a turn closes and again before anything is sent, so nothing leaves after it goes off;
-and the end-of-call notes wait for the queue, so they are written from the whole call.
+when a turn closes and again before anything is sent, so nothing overheard leaves after it
+goes off; and the end-of-call notes wait for the queue, so they are written from the whole
+call.
+
+**A screenshot is the one thing that pre-empts.** It enters the same queue as a spoken turn —
+`AutoAnswerer.shot` — with `preempts: true`, so it cancels whatever answer is out, which is
+usually an answer to "let me paste this here". It is exempt from the toggle at both reads:
+the toggle governs what is overheard, and pressing a key is asking. With auto off a shot goes
+alone, and does not carry held speech out with it. An answer to a batch that holds a shot is
+keyed to the shot, not to whatever closed last, and every shot that will get no answer of its
+own — cancelled by a newer one, or sent ahead of it in the same batch — is sent a frame
+saying so, because on the page "Asking…" is not a state but the absence of one.
 
 **Escape hatches, each for a stated reason.** `Pipeline.activeTap` is a `Mutex`, not actor
 state, because teardown has to be callable synchronously from the signal handler: a `Task`
@@ -357,10 +382,16 @@ pill red over a session that was still running.
 
 ### Frames the server adds
 
-Over SSE — and only over SSE, never on stdout — the transcript server emits four more shapes
-so that the page stays a transcript rather than a notepad: `answer` (a streamed fragment),
-`answer_done` (the complete answer, backlogged once), `answer_failed`, and `scroll` (one
-page's scroll anchor relayed to the others, live-only). Each answer frame carries `key` and
+Over SSE — and only over SSE, never on stdout — the page is sent shapes the pipeline never
+emits, so that the JSON Lines stream stays a transcript rather than a notepad. From the
+server: `answer` (a streamed fragment), `answer_done` (the complete answer, backlogged once),
+`answer_failed`, and `scroll` (one page's scroll anchor relayed to the others, live-only).
+From the answerer: `auto` (the running count of calls and answers, live-only),
+`summary_pending`, `summary_done` and `summary_failed` for the end-of-call notes, and `shot`
+— a screenshot was taken: when, whether the screen or a region, and its size in pixels and
+bytes. Never the picture. `shot` is backlogged and logged like a question line, because it is
+a row in the transcript; it is built by hand rather than through `JSONSerialization`, which
+spells 83.412 as 83.412000000000006, so that its `t` and its `key` agree to the digit. Each answer frame carries `key` and
 `for`, so a page can drop a frame that reached the socket before the server heard its
 question had been revised.
 
@@ -414,9 +445,9 @@ Every request is gated in this order, and the order is deliberate.
 2. **Token** (`?t=`), when one is configured. Constant-time comparison, and deliberately the
    same 403 for a missing token as for a wrong one. This is checked *before* the method check:
    answering 405 first told an unauthenticated prober which paths exist.
-3. **Method.** `POST` for `/ask` and `/control`, `GET` for everything else.
-4. **Same-origin, POST only** — so in practice `/ask` and `/control`, the only two POST
-   routes. `Sec-Fetch-Site` must read `same-origin` when the browser sends it; failing that,
+3. **Method.** `POST` for `/ask`, `/control`, `/summarise` and `/shot`, `GET` for everything
+   else.
+4. **Same-origin, POST only.** `Sec-Fetch-Site` must read `same-origin` when the browser sends it; failing that,
    `Origin` is matched against `Host`. Either mismatch is a `403`. A client sending neither —
    curl, a script, the tests — is let through. Reading is deliberately not gated this way: a
    hostile page cannot read a cross-origin response without a CORS header this server never
@@ -426,6 +457,12 @@ Every request is gated in this order, and the order is deliberate.
    anything: the three content types a cross-origin POST may carry without a preflight are
    all refused, and this server answers no preflight because `OPTIONS` is not an allowed
    method.
+6. **This machine, `/shot` only.** The connection's remote endpoint must be `127.0.0.1`,
+   `::1`, or the first of those as an IPv4-mapped IPv6 address — which Network.framework's
+   own `isLoopback` does not recognise, and a dual-stack listener can hand over. It applies
+   whatever the listener is bound to. Under `--listen` anyone on the network holding the token
+   can read the transcript; that must not extend to making the Mac photograph its own screen.
+   It is the only route that looks at who is asking rather than at what they sent.
 
 | Route | Method | Behaviour |
 | --- | --- | --- |
@@ -433,6 +470,8 @@ Every request is gated in this order, and the order is deliberate.
 | `/events` | GET | Opens the SSE stream, registers the connection, and replays the backlog from `Last-Event-ID` or `?after=`. An unusable cursor falls through to the whole backlog. |
 | `/ask` | POST | Starts an answer and returns `202` immediately. The answer itself streams over `/events` to *every* open page, so a phone and a laptop show the same thing because they are the same path, not two kept in step. `503` when no `AskHandler` is configured. |
 | `/control` | POST | Applies a capture change and replies with the resulting state as JSON — request/response rather than a stream, because the page must know the change landed before it repaints the button. `503` unconfigured, `400` on a body it will not parse. A body carrying only a `scroll` anchor is relayed live to other pages and answered `200`. |
+| `/summarise` | POST | Asks for the end-of-call notes and returns `202`; they stream back as `summary_*` frames. The handler is called *before* the `202` is sent — the opposite order to `/ask`. `503` unconfigured. |
+| `/shot` | POST | Asks the running wngmn to take a picture of the screen: `{"mode":"screen"}` or `{"mode":"region"}`, `400` for anything else, `403` from anywhere but this machine, `503` unconfigured. Handler before `202`, as for `/summarise`, and the handler must return at once: it runs on `wngmn.serve`, the one serial queue that carries the listener and every connection, and a region shot can sit under a crosshair for a minute. The picture never crosses this server in either direction — the request is a few bytes and the reply is `{"ok":true}` — which is the reason for the design: `receive` drops anything over 64 KB and decodes bodies as UTF-8. |
 | anything else | — | `404`. |
 
 Connection-level rules worth knowing before touching `receive`: bytes are accumulated and

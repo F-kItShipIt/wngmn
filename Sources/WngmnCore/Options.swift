@@ -486,12 +486,18 @@ public struct Options: Sendable, Equatable {
       profile written by `ant auth login`. Asking sends the question and the recent
       transcript to the Claude API. Nothing is sent until you press the button — unless
       you turn on the page's prefetch toggle, which sends every caller question as it
-      lands, without a press.
+      lands, without a press, or its auto toggle, which sends every turn as it ends.
+      `wngmn shot` sends a picture of your screen, and it stays in the conversation, so
+      it is sent again with every later turn until the call ends.
       --seconds <n>          selftest duration (default 3)
       --speed <n>            offline playback speed vs real time (default 8); the recogniser
                              must keep up with the endpointer, so this is not free
 
     NOTES
+      `wngmn shot` needs Screen Recording as well, granted to the same app — and in the
+      upper list of that Settings pane, not "System Audio Recording Only". Without it
+      macOS returns your wallpaper rather than an error, so wngmn checks, and refuses.
+
       System Audio Recording is granted to the *terminal app*, not to this binary. Run from a
       terminal that holds the grant, and run `wngmn selftest` before every interview: a
       denial returns noErr from every Core Audio call and yields pure silence.
