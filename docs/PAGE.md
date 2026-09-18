@@ -152,8 +152,8 @@ is also what identifies the row across devices, as `speaker@t0`.
 
 **The speaker label** sits under the timestamp rather than in a column of its own, so a
 single-source transcript looks exactly as it did before the microphone existed. It appears
-only when `--mic` is on: `speaker` is carried on the wire only when more than one source is
-being captured. Your own lines are tinted and labelled **You**, the other side **Caller**.
+unless `--no-mic` was passed: `speaker` is carried on the wire only when more than one source
+is being captured. Your own lines are tinted and labelled **You**, the other side **Caller**.
 
 **The latency tag** is that question's `ms` — the measured endpoint-to-final latency, the
 same number in the JSON. It turns red when the question is over budget, which is not `ms`

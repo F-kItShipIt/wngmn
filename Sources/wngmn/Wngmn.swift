@@ -582,6 +582,7 @@ struct Wngmn {
         teardown: TeardownCoordinator, control: CaptureControl, profiles: ProfileSource,
         timeline: CaptureTimeline
     ) async throws {
+        EventWriter.note(options.listeningNote)
         var tapConfiguration = SystemAudioTap.Configuration()
         tapConfiguration.bundleIDs = options.bundleIDs
         tapConfiguration.globalTap = options.globalTap

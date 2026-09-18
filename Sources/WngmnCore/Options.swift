@@ -32,16 +32,19 @@ public struct Options: Sendable, Equatable {
     }
 
     public var command: Command = .run
-    /// Bundle IDs to scope the tap to. Chrome renders Meet audio from a helper process, so
-    /// the helper is a candidate too; which entry actually carries the audio is resolved by
-    /// `devices` and by rehearsal, not assumed.
+    /// Bundle IDs to scope the tap to, when it is scoped. Chrome renders Meet audio from a
+    /// helper process, so the helper is a candidate too; which entry actually carries the
+    /// audio is resolved by `devices` and by rehearsal, not assumed.
     public var bundleIDs: [String] = [
         "us.zoom.xos", "us.zoom.CptHost", "us.zoom.caphost",
         "com.google.Chrome", "com.google.Chrome.helper",
     ]
-    /// Tap everything instead of scoping by bundle ID. Picks up Slack dings and other tabs,
-    /// so Do Not Disturb becomes mandatory.
-    public var globalTap = false
+    /// Tap everything the Mac plays rather than a list of apps. The default since 0.4.0. It
+    /// was the list, and a call in Teams, FaceTime, Slack or Safari was silence with every
+    /// status code reading success — while the README put `--global` on every command it
+    /// printed, which is a default spelled the long way. The cost is Slack dings and the
+    /// other tab: `--call-apps` and `--bundle-id` are for whoever minds.
+    public var globalTap = true
     public var locale = "en-US"
     public var termsPath: String?
     public var inputPath: String?
@@ -49,8 +52,11 @@ public struct Options: Sendable, Equatable {
     /// Begin without listening to the caller, so capture starts only when asked for.
     public var startPaused = false
     /// Capture the local microphone as a second source, so the transcript carries both
-    /// halves of the conversation rather than only the caller's.
-    public var mic = false
+    /// halves of the conversation rather than only the caller's. On since 0.4.0: it was off
+    /// because on speakers the mic re-heard the caller and every line doubled, which is
+    /// `EchoGate`'s job now — and a tool that answers a conversation should not need telling
+    /// to listen to both halves of it.
+    public var mic = true
     /// Ignore the mic while it is only hearing the call come out of a speaker. On by default
     /// because built-in speakers and the built-in mic are what a laptop has: without it every
     /// sentence the caller speaks is transcribed twice, once under each label. It measures
@@ -144,6 +150,17 @@ public struct Options: Sendable, Equatable {
     /// `--no-auto` is the old behaviour. The page's toggle still turns it off mid-call.
     public var autoAnswer = true
 
+    /// What this run listens to, said at startup. The defaults are broad on purpose — every
+    /// app, and your own microphone — and a broad default that is not announced is a
+    /// surprise waiting in a log file.
+    public var listeningNote: String {
+        let tap = globalTap
+            ? "everything this Mac plays (--call-apps or --bundle-id narrows it)"
+            : "only " + bundleIDs.joined(separator: ", ")
+        let microphone = mic ? ", and your microphone (--no-mic drops it)" : "; your microphone is off"
+        return "wngmn: hearing \(tap)\(microphone)."
+    }
+
     /// Whether this run starts with auto on. Not without a page — there would be nowhere for
     /// an answer to go — and not without credentials, where every turn would become a failed
     /// answer on a run whose startup has already said that Ask will fail.
@@ -183,6 +200,8 @@ public struct Options: Sendable, Equatable {
         }
 
         var explicitBundleIDs: [String] = []
+        var explicitGlobal = false
+        var callAppsOnly = false
         var i = 0
         func value(_ flag: String) throws -> String {
             i += 1
@@ -219,7 +238,8 @@ public struct Options: Sendable, Equatable {
             switch arg {
             case "-h", "--help": o.command = .help
             case "--bundle-id": explicitBundleIDs.append(try value(arg))
-            case "--global": o.globalTap = true
+            case "--global": explicitGlobal = true
+            case "--call-apps": callAppsOnly = true
             case "--locale": o.locale = try value(arg)
             case "--terms": o.termsPath = try value(arg)
             case "--hangover-ms": o.endpointer.hangoverMs = try number(arg)
@@ -245,6 +265,7 @@ public struct Options: Sendable, Equatable {
                 o.shotMode = .region
             case "--no-auto": o.autoAnswer = false
             case "--mic": o.mic = true
+            case "--no-mic": o.mic = false
             case "--no-echo-gate": o.echoGate = false
             // Naming a device is an unambiguous request to capture from it.
             case "--mic-device": o.micDeviceUID = try value(arg); o.mic = true
@@ -307,6 +328,10 @@ public struct Options: Sendable, Equatable {
         }
 
         if !explicitBundleIDs.isEmpty { o.bundleIDs = explicitBundleIDs }
+        // Naming an app, or asking for the call apps, is asking for less than everything.
+        // `--global` said out loud still wins, as it did when it was the only way to say it.
+        if !explicitBundleIDs.isEmpty || callAppsOnly { o.globalTap = false }
+        if explicitGlobal { o.globalTap = true }
         // Everywhere else --port and --token mean "serve", and `main` starts the server before
         // it looks at the command. For a client they say where to post. Left alone, `wngmn shot
         // --port 7373` would try to bind the port it is posting to and report that another
@@ -413,10 +438,13 @@ public struct Options: Sendable, Equatable {
                                    a key. Takes the --port and --token the server was given.
 
     CAPTURE
-      --bundle-id <id>       scope the tap to this app; repeatable. Replaces the default list,
-                             which covers Zoom (xos, CptHost, caphost) and Chrome (browser and
-                             helper) — neither renders call audio from the obvious process.
-      --global               tap everything instead of scoping by bundle ID
+      By default the tap hears everything the Mac plays, whatever app the call is in.
+      --call-apps            hear only the call apps wngmn knows: Zoom (xos, CptHost, caphost)
+                             and Chrome (browser and helper) — neither renders call audio
+                             from the obvious process. Keeps your music out of it.
+      --bundle-id <id>       hear only this app; repeatable. `wngmn devices`, mid-call, lists
+                             what is rendering audio.
+      --global               hear everything. The default; kept so old commands still work.
       --no-keepalive         do not hold the output device open with a silent IOProc
                              (the tap only clocks while that device is running)
 
@@ -436,16 +464,10 @@ public struct Options: Sendable, Equatable {
       --terms <path>         jargon correction list (default ./terms.txt)
 
     MICROPHONE  (the "You" half of the transcript)
-      --token <value>        fixed access token, so one bookmarked URL keeps working across
-                             runs instead of a new one each time. Implies --listen. A short
-                             token is guessable by anyone on your network; the transcript
-                             carries the other person's words too.
-      --new-token            replace the stored token; every bookmarked URL stops working
-      --start-paused         begin paused: the caller is not transcribed until you press
-                             Listen on the page (or p). Capture controls are also on the
-                             page as Mute and Pause.
-      --mic                  also capture your microphone, so both sides of the call are
-                             transcribed and each line is labelled Caller or You
+      Your microphone is captured too, so both sides of the call are transcribed and each
+      line is labelled Caller or You. macOS asks once, for the terminal app.
+      --no-mic               the caller only
+      --mic                  the default; kept so old commands still work
       --mic-device <uid>     capture from this input device (default: system default
                              input); implies --mic
       --mic-open-db <n>      speech threshold for the mic in dBFS (default -35; louder
@@ -479,6 +501,14 @@ public struct Options: Sendable, Equatable {
       --port <n>             port for --serve (default 7373); implies --serve
       --listen               bind the network instead of loopback so a phone or iPad can
                              read it, with a token in the printed URL. Implies --serve
+      --token <value>        fixed access token, so one bookmarked URL keeps working across
+                             runs instead of a new one each time. Implies --listen. A short
+                             token is guessable by anyone on your network; the transcript
+                             carries the other person's words too.
+      --new-token            replace the stored token; every bookmarked URL stops working
+      --start-paused         begin paused: the caller is not transcribed until you press
+                             Listen on the page (or p). Capture controls are also on the
+                             page as Mute and Pause.
       --no-log               do not write the transcript to disk. The pages still get
                              everything live; nothing survives the process
       --resume               continue the most recent session instead of starting one, so a

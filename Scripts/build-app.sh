@@ -100,7 +100,7 @@ fi
 # Signing can "succeed" having silently dropped what was asked for, so this is checked rather
 # than assumed: without the entitlement the microphone is denied before any prompt appears.
 if ! codesign -d --entitlements :- "$APP" 2>/dev/null | grep -q "audio-input"; then
-    echo "    WARNING  the bundle carries no microphone entitlement; --mic will capture silence"
+    echo "    WARNING  the bundle carries no microphone entitlement; the microphone will capture silence"
 fi
 
 codesign -dv "$APP" 2>&1 | sed 's/^/    /'

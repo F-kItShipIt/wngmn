@@ -9,7 +9,7 @@ rebuild; the three values that are not are named under *The knobs* below.
 Most of it you will never touch. The order worth going in:
 
 1. `wngmn selftest` — the go/no-go gate. Nothing below matters until the tap hears a tone.
-2. `wngmn miccheck` — only if you use `--mic`. It measures your room and prints the
+2. `wngmn miccheck` — unless you run with `--no-mic`. It measures your room and prints the
    threshold to use.
 3. A terms file or a profile `## Terms` section — jargon is the failure you will notice
    first and the one that is cheapest to fix.
@@ -239,8 +239,8 @@ arithmetic `miccheck` does automatically for the microphone.
 
 ## The microphone endpointer
 
-`--mic` captures your own microphone as a second speaker, labelled `you` against the
-caller's `caller`. It runs a **separate** `Endpointer` with its own configuration, and three
+Your own microphone is captured as a second speaker, labelled `you` against the caller's
+`caller`, unless you pass `--no-mic`. It runs a **separate** `Endpointer` with its own configuration, and three
 of its defaults differ from the tap's on purpose — the two sources are not the same problem.
 
 | Flag | Mic default | Tap default | Why |
@@ -253,7 +253,7 @@ Everything else — onset, minimum and maximum speech, hysteresis, the adaptive 
 shared with the tap's defaults. `--mic-open-db` is dBFS and must be negative;
 `--mic-hangover-ms` must be positive; `--mic-merge-ms` must not be negative.
 
-`--mic-device <uid>` picks an input other than the system default, and implies `--mic`. Use
+`--mic-device <uid>` picks an input other than the system default. Use
 `wngmn devices` to find the UID.
 
 **The mic half works on speakers.** There the microphone hears the caller as well as you.

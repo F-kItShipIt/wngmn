@@ -94,7 +94,7 @@ It builds from source. The app is signed for the Mac that built it and no other.
 ## 2. Start it
 
 ```sh
-wngmn --listen --global
+wngmn --listen
 ```
 
 It prints two links and keeps running. **Leave that window open for the whole call** — close it and wngmn stops. To stop it yourself, click the window and press Ctrl-C. **Start it before the call, not during it.**
@@ -166,12 +166,12 @@ The answer shows up like any other. With auto on, wngmn remembers the picture �
 
 Press your key once before the call. The first time, macOS asks to let Terminal record the screen: allow it, quit Terminal (⌘Q), and start wngmn again.
 
-### Get your own words too
+### Both sides of the call
 
-Out of the box wngmn hears **them, not you** — it exists to catch their question. To see both sides, labelled Caller and You:
+It hears them and it hears you, labelled Caller and You, in whatever app the call is in. The first time, macOS asks to let Terminal use the microphone: say yes. Their side only:
 
 ```sh
-wngmn --listen --global --mic
+wngmn --listen --no-mic
 ```
 
 It uses whatever mic and speakers your Mac is using — the built-in ones are fine, and nothing needs plugging in first. On speakers your mic hears the other person too, so wngmn notices and ignores your mic while they're talking: their words show up once, as theirs. The price: anything you say *over* them is lost. On headphones nothing is. Wired beats AirPods: a Bluetooth headset using its own mic drops the call to phone quality.
@@ -181,7 +181,7 @@ It uses whatever mic and speakers your Mac is using — the built-in ones are fi
 Buttons at the top of the page, and they work from the phone:
 
 - **⏸ listening** → tap to stop hearing them (key: `p`). Nothing they say is written down or sent while it's paused. Start that way with `--start-paused`.
-- **mic on** (only there with `--mic`) → tap to stop wngmn hearing your mic (key: `m`). This does **not** mute you on the call — use the call app's own mute for that.
+- **mic on** → tap to stop wngmn hearing your mic (key: `m`). This does **not** mute you on the call — use the call app's own mute for that.
 
 ### Get notes at the end
 
@@ -212,7 +212,7 @@ Kubernetes | cooper netties | goober netties
 ```
 
 ```sh
-wngmn --listen --global --profile ~/me.md
+wngmn --listen --profile ~/me.md
 ```
 
 **Style** is how you talk. **Context** is what you know. **Terms** fixes words it mishears: the right word first, then what it hears. Only those three `##` headings are read — any other `##` (one inside a pasted CV, say) is named when wngmn starts and everything under it is ignored, so make those `###`. wngmn says `profile …` with the sizes when it starts; `could not be read` means the path is wrong.
@@ -225,11 +225,11 @@ Nothing here prints an error. It just goes quiet — so check the night before.
 
 | What you see | Why | Fix |
 | --- | --- | --- |
-| No lines when **they** talk | Without `--global`, wngmn only hears Zoom and Chrome | Add `--global` |
-| Still no lines, with `--global` | macOS isn't letting Terminal listen — or the call isn't playing on this Mac | `wngmn selftest`. FAIL → fix the permission in step 1. PASS → make sure the call's sound is coming out of this Mac, not your phone |
-| No lines when **you** talk | Your mic is off unless you ask | Add `--mic`. If macOS asks about the microphone, say yes — it's asking for Terminal |
-| Their lines show up twice, as Caller and as You | Your mic hears them through the speakers, and wngmn hasn't caught it — a very echoey room, or `--no-echo-gate` | Headphones, or drop `--mic` |
+| No lines when **they** talk | macOS isn't letting Terminal listen — or the call isn't playing on this Mac | `wngmn selftest`. FAIL → fix the permission in step 1. PASS → make sure the call's sound is coming out of this Mac, not your phone |
+| No lines when **you** talk | macOS isn't letting Terminal use the microphone | System Settings → Privacy & Security → **Microphone** → switch on **Terminal** → quit Terminal, start again |
+| Their lines show up twice, as Caller and as You | Your mic hears them through the speakers, and wngmn hasn't caught it — a very echoey room, or `--no-echo-gate` | Headphones, or `--no-mic` |
 | My words go missing when we talk at once | On speakers, wngmn ignores your mic while they're talking | Headphones |
+| It writes down my music, and every ding | It hears everything the Mac plays | `--call-apps` keeps it to Zoom and Chrome. Or turn the music off |
 | Lines, but no answers | No key, or **auto** is unticked | `echo $ANTHROPIC_API_KEY` — empty means it isn't saved. Tick **auto** |
 | Lines, a few answers, mostly nothing | It only answers questions. Small talk gets none | Nothing is wrong |
 | Screenshot says *Screen Recording is not granted* | macOS hasn't let Terminal see the screen | Same Settings pane as `selftest`, top list → quit Terminal, start again |
@@ -240,24 +240,25 @@ Nothing here prints an error. It just goes quiet — so check the night before.
 
 | Type this | What it does |
 | --- | --- |
-| `wngmn --listen --global` | Start. Hears them, in any app. Prints the link for your phone |
-| `wngmn --listen --global --mic` | The same, plus your side of the call |
-| `wngmn --listen --global --profile ~/me.md` | Answers from your notes |
-| `wngmn --listen --global --no-auto` | Answers only when you tap **Ask** |
-| `wngmn --serve --global` | This Mac only → http://127.0.0.1:7373 |
+| `wngmn --listen` | Start. Hears both sides, in any app. Prints the link for your phone |
+| `wngmn --listen --no-mic` | Their side only |
+| `wngmn --listen --call-apps` | Zoom and Chrome only, so your music stays out of it |
+| `wngmn --listen --profile ~/me.md` | Answers from your notes |
+| `wngmn --listen --no-auto` | Answers only when you tap **Ask** |
+| `wngmn --serve` | This Mac only → http://127.0.0.1:7373 |
 | `wngmn shot --region` | Screenshot a problem (put it on a key) |
-| `wngmn --listen --global --resume` | Pick the transcript back up after a crash |
+| `wngmn --listen --resume` | Pick the transcript back up after a crash |
 | `wngmn stop` | Stop every wngmn that's running |
 | `wngmn --help` | Every flag |
 
-Flags combine: `wngmn --listen --global --mic --profile ~/me.md`. The ones worth knowing, with examples: [docs/USAGE.md](docs/USAGE.md).
+Flags combine: `wngmn --listen --call-apps --profile ~/me.md`. The ones worth knowing, with examples: [docs/USAGE.md](docs/USAGE.md).
 
 ## Privacy
 
 There is no server and no account, so there is nothing to collect. No analytics, no crash reports. What leaves your Mac, all of it, and only to Anthropic on your own key:
 
-- **Audio: never.** Speech is turned into text on your Mac.
-- **auto** (on unless you pass `--no-auto`): each turn as it ends — theirs, and yours if `--mic` is on — with the conversation so far and your profile. wngmn says so when it starts.
+- **Audio: never.** Speech is turned into text on your Mac — theirs, yours, and anything else the Mac plays while wngmn is running. `--call-apps` and `--no-mic` make that less.
+- **auto** (on unless you pass `--no-auto`): each turn as it ends — theirs and yours — with the conversation so far and your profile. wngmn says so when it starts.
 - **Ask:** that line, the few before it, and your profile — when you tap. Tick **prefetch** on the page and it goes for every line of theirs as it lands.
 - **shot:** a picture of your screen, when you press your key. It stays in the conversation and goes again with every later answer until wngmn quits. Whatever else is on the screen goes with it; drag a region if that matters. The file is deleted as soon as it's read.
 - **notes:** the conversation auto already sent, once more, when you tap **▸ notes**.
