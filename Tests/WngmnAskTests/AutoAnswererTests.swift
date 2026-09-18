@@ -104,7 +104,13 @@ struct AutoAnswererTests {
     }
 
     /// Polls until `condition` holds, or gives up. The same helper `TranscriptServerTests` has.
-    func wait(until condition: () -> Bool, seconds: Double = 10) async {
+    ///
+    /// The deadline is only ever reached by a test that is failing — the suite passes in a
+    /// third of a second — so it is long. It was ten seconds, and on Linux, where every test
+    /// target runs in one process, the echo gate's simulations held all four of a runner's
+    /// threads for nine of them: three of these tests timed out waiting for a request that
+    /// was only waiting for a thread.
+    func wait(until condition: () -> Bool, seconds: Double = 60) async {
         let deadline = ContinuousClock.now + .seconds(seconds)
         while !condition(), ContinuousClock.now < deadline {
             try? await Task.sleep(for: .milliseconds(10))

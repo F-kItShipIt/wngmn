@@ -200,7 +200,11 @@ struct SimulatedCall {
 /// Caller, once from the mic as You, 32 ms apart and word for word. In one real 80-minute
 /// call on built-in speakers, 22 of the 63 of the user's lines that overlapped a caller line
 /// were that caller line again. With auto on, each of those is also a request.
-@Suite("Echo gate")
+/// Serialized because each test replays seconds of recorded speech through the gate, which
+/// is computation with no suspension point in it. In parallel they take every thread of the
+/// cooperative pool for seconds at a time, and on Linux, where all test targets share one
+/// process, that starved the answerer's tests of the thread their requests were waiting for.
+@Suite("Echo gate", .serialized)
 struct EchoGateTests {
     typealias Clip = SimulatedCall.Clip
 

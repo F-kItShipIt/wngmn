@@ -28,13 +28,24 @@ var targets: [Target] = [
         resources: [.copy("Fixtures")],
         swiftSettings: settings
     ),
+
+    // Outbound Claude calls: credentials, prompt assembly, streaming HTTP. Separate
+    // from WngmnServe on purpose — the server renders the transcript and knows
+    // nothing about where an answer comes from, so the Claude dependency stays on one
+    // side of that line.
+    .target(
+        name: "WngmnAsk", dependencies: ["WngmnCore"],
+        path: "Sources/Engine/WngmnAsk", swiftSettings: settings),
+    .testTarget(
+        name: "WngmnAskTests",
+        dependencies: ["WngmnAsk"],
+        swiftSettings: settings
+    ),
 ]
 
 // Everything below still needs an Apple framework, so off macOS it is left out of the
 // package rather than left to fail: a Linux `swift build` then builds, and `swift test`
-// tests, exactly the part of wngmn that has crossed. WngmnAsk is engine by design and sits
-// under Sources/Engine, but streams with `URLSession.bytes(for:)`, which the open-source
-// Foundation does not have; it moves up to the list above when that is replaced.
+// tests, exactly the part of wngmn that has crossed.
 #if os(macOS)
 products.append(.executable(name: "wngmn", targets: ["wngmn"]))
 targets += [
@@ -52,14 +63,6 @@ targets += [
         name: "WngmnServe", dependencies: ["WngmnCore"],
         path: "Sources/UI/WngmnServe", swiftSettings: settings),
 
-    // Outbound Claude calls: credentials, prompt assembly, streaming HTTP. Separate
-    // from WngmnServe on purpose — the server renders the transcript and knows
-    // nothing about where an answer comes from, so the Claude dependency stays on one
-    // side of that line.
-    .target(
-        name: "WngmnAsk", dependencies: ["WngmnCore"],
-        path: "Sources/Engine/WngmnAsk", swiftSettings: settings),
-
     .executableTarget(
         name: "wngmn",
         dependencies: ["WngmnCore", "WngmnAudio", "WngmnServe", "WngmnAsk"],
@@ -67,11 +70,6 @@ targets += [
         swiftSettings: settings
     ),
 
-    .testTarget(
-        name: "WngmnAskTests",
-        dependencies: ["WngmnAsk"],
-        swiftSettings: settings
-    ),
     .testTarget(
         name: "WngmnServeTests",
         dependencies: ["WngmnServe"],
