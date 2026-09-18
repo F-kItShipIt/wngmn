@@ -77,7 +77,7 @@ What it is **not** a defence against, stated plainly so nobody relies on it:
 
 * **Audio never leaves the machine.** Transcription is Apple's on-device `SpeechAnalyzer` and
   `SpeechTranscriber`. The only outbound request the binary makes is the streaming POST to
-  `https://api.anthropic.com/v1/messages` in `Sources/WngmnAsk/ClaudeClient.swift`. For an
+  `https://api.anthropic.com/v1/messages` in `Sources/Engine/WngmnAsk/ClaudeClient.swift`. For an
   Ask it carries text: the question, the recent transcript lines the page sent with it, and
   your profile or notes. With **auto** on it carries the running conversation — every turn
   that closed, yours and theirs, and every answer so far. And after a `wngmn shot` it carries

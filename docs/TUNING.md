@@ -20,7 +20,7 @@ Most of it you will never touch. The order worth going in:
 
 ## What the endpointer actually does
 
-`Sources/WngmnCore/Endpointer.swift` runs over the raw tap frames, ahead of the recogniser.
+`Sources/Engine/WngmnCore/Endpointer.swift` runs over the raw tap frames, ahead of the recogniser.
 It computes RMS over non-overlapping 10 ms windows, converts to dBFS (floored at −120), and
 walks a four-state machine. Two properties matter more to it than accuracy:
 
@@ -60,7 +60,7 @@ question must not stop the second half from being stitched onto the first.
 
 ## The knobs
 
-Defaults are from `EndpointerConfig` in `Sources/WngmnCore/Endpointer.swift`; the flags are
+Defaults are from `EndpointerConfig` in `Sources/Engine/WngmnCore/Endpointer.swift`; the flags are
 parsed in `Options.swift`.
 
 | Flag | Default | What it does |
@@ -75,7 +75,7 @@ parsed in `Options.swift`.
 
 Three further values have **no flag at all** — not a hidden one, not an environment variable,
 and `--help` does not print them — because moving them has never been needed. Changing one
-means editing its default in `EndpointerConfig` (`Sources/WngmnCore/Endpointer.swift`) and
+means editing its default in `EndpointerConfig` (`Sources/Engine/WngmnCore/Endpointer.swift`) and
 rebuilding with `swift build -c release`. They are there if a room ever demands it:
 
 * `windowMs` = 10 — the analysis window.

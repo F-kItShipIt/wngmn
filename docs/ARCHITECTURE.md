@@ -46,6 +46,30 @@ Everything is Apple frameworks or hand-rolled: Core Audio, `Speech`, `AVFoundati
 `WngmnAudio`, `WngmnServe` and `WngmnAsk` each depend on `WngmnCore` and on nothing else.
 They do not know about each other. The executable is the only place the three meet.
 
+### Where they live
+
+The directories say which layer a target belongs to, because wngmn is meant to run on more
+than one operating system and the engine is the part that has to travel.
+
+```
+Sources/
+  Engine/           the part that travels: no Apple framework may be imported here
+    WngmnCore/      pure logic
+    WngmnAsk/       the Claude client, the conversation, the answerer
+  UI/
+    WngmnServe/     the page, and the server that feeds it
+  Platform/
+    Apple/
+      WngmnAudio/   Core Audio, the process tap, SpeechAnalyzer
+  App/
+    wngmn/          the macOS command line: wiring and nothing else
+```
+
+Target names do not change with the directory, so every `import` and `--filter` reads as it
+always did. A second platform adds `Platform/<os>/` beside `Apple/` and an app beside `wngmn`,
+and shares everything under `Engine/` and `UI/`. Not all of `Engine/` is there yet: see
+[the split](#the-engine-and-the-platform) below.
+
 ### WngmnCore — pure logic
 
 `Endpointer`, `QuestionAssembler`, `AudioRingBuffer`, `Event`/`EventEncoder`,
@@ -349,7 +373,7 @@ than linking against internals, so the shape is a published contract — **inclu
 it runs on a live call: one string allocated, no reflection. Diagnostics go to stderr, so
 `wngmn | jq` stays clean.
 
-Six event types, defined in `Sources/WngmnCore/Events.swift`.
+Six event types, defined in `Sources/Engine/WngmnCore/Events.swift`.
 
 | type | fields |
 | --- | --- |
@@ -606,28 +630,28 @@ Follow the data, then the seams.
 
 1. `Package.swift` — the target boundaries and why they are where they are, in its own
    comments.
-2. `Sources/WngmnCore/Events.swift` — the published contract. Everything downstream is
+2. `Sources/Engine/WngmnCore/Events.swift` — the published contract. Everything downstream is
    shaped by it.
-3. `Sources/WngmnCore/Endpointer.swift` — the distinctive decision, and pure enough to read
+3. `Sources/Engine/WngmnCore/Endpointer.swift` — the distinctive decision, and pure enough to read
    in one sitting.
-4. `Sources/WngmnCore/QuestionAssembler.swift` — the join between "when it ended" and "what
+4. `Sources/Engine/WngmnCore/QuestionAssembler.swift` — the join between "when it ended" and "what
    was said". Read `Endpointer` first or none of this will land.
-5. `Sources/WngmnCore/RingBuffer.swift` — the real-time boundary, and the contract the tap
+5. `Sources/Engine/WngmnCore/RingBuffer.swift` — the real-time boundary, and the contract the tap
    is written against.
-6. `Sources/WngmnAudio/SystemAudioTap.swift` — the three counter-intuitive facts about the
+6. `Sources/Platform/Apple/WngmnAudio/SystemAudioTap.swift` — the three counter-intuitive facts about the
    capture graph are in the type's own doc comment.
-7. `Sources/WngmnAudio/AudioClock.swift` — every number in it was measured, and the
+7. `Sources/Platform/Apple/WngmnAudio/AudioClock.swift` — every number in it was measured, and the
    tick-versus-nanosecond distinction underlies every timestamp the tool emits.
-8. `Sources/WngmnAudio/Transcriber.swift` — forced finalisation, the resampler, and the
+8. `Sources/Platform/Apple/WngmnAudio/Transcriber.swift` — forced finalisation, the resampler, and the
    contiguity invariant.
-9. `Sources/WngmnAudio/Pipeline.swift` — where all of the above is assembled, plus the
+9. `Sources/Platform/Apple/WngmnAudio/Pipeline.swift` — where all of the above is assembled, plus the
    watchdogs. The longest file in `WngmnAudio` and the last one worth reading cold.
-10. `Sources/WngmnServe/TranscriptServer.swift` — routing, gating, replay, and the ask
+10. `Sources/UI/WngmnServe/TranscriptServer.swift` — routing, gating, replay, and the ask
     bookkeeping.
-11. `Sources/wngmn/Wngmn.swift` — the wiring, which is easiest to follow once you know what
+11. `Sources/App/wngmn/Wngmn.swift` — the wiring, which is easiest to follow once you know what
     is being wired.
 
-`Sources/WngmnServe/Page.swift` is the page itself, 1,600 lines of embedded HTML, CSS and
+`Sources/UI/WngmnServe/Page.swift` is the page itself, 1,600 lines of embedded HTML, CSS and
 JavaScript. Read it when you are changing the page and not before.
 
 For the test tiers, `Tests/WngmnCoreTests/GoldenVADTests.swift` and
@@ -635,3 +659,21 @@ For the test tiers, `Tests/WngmnCoreTests/GoldenVADTests.swift` and
 permission, and `Tests/WngmnAudioTests/CaptureHealthTests.swift` shows why the watchdog
 escalation was extracted into pure functions — so it could be asserted without a capture
 graph and a four-minute wait.
+
+## The engine and the platform
+
+Where the line is today, measured rather than hoped for:
+
+- `WngmnCore` imports nothing from Apple but `Darwin`, in one file, to list processes for
+  `wngmn stop`.
+- `WngmnAsk` streams with `URLSession.bytes(for:)`, which the open-source Foundation does not
+  have, and finds a token by running the `ant` command.
+- `WngmnServe` has its HTTP and SSE policy in pure Swift, beside one file's worth of
+  `Network.framework` listener.
+- `WngmnAudio` is two thirds orchestration that happens to construct three Apple types
+  itself (the tap, the microphone and the recogniser), and one third those types.
+- The executable is mostly session wiring that an engine should own and test.
+
+The work that moves each of these across is done one pull request at a time, each leaving
+macOS green and installable. A Linux job in CI builds and tests whatever has already crossed,
+because a layer only one operating system ever compiles is a layer in name only.
