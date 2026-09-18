@@ -16,6 +16,9 @@ profiles/*
 !profiles/technical.md
 # A private working list of open issues, not a public tracker.
 BACKLOG.md
+# Design specs and implementation plans: working papers, like the backlog above. What a
+# change does and why belongs in its pull request and in docs/, where it is kept current.
+docs/superpowers/
 
 # Lavish Editor review artifacts
 .lavish/
