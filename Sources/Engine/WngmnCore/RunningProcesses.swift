@@ -1,4 +1,6 @@
+#if canImport(Darwin)
 import Darwin
+#endif
 import Foundation
 
 /// Finding the other copies of wngmn that are still running.
@@ -25,6 +27,7 @@ public enum RunningProcesses {
     /// audio, and shelling out to parse text is both slower and one more thing to get
     /// wrong. `p_comm` is truncated to 16 characters, which "wngmn" fits inside.
     public static func all() -> [(pid: Int32, name: String)] {
+        #if canImport(Darwin)
         var name: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0]
         var size = 0
         guard sysctl(&name, UInt32(name.count - 1), nil, &size, nil, 0) == 0, size > 0 else {
@@ -47,5 +50,18 @@ public enum RunningProcesses {
             }
             return (pid: entry.kp_proc.p_pid, name: command)
         }
+        #elseif os(Linux)
+        // Linux has no sysctl for this; `/proc/<pid>/comm` is the same name, truncated to 15
+        // characters as `p_comm` is to 16, which "wngmn" fits inside either way.
+        let entries = (try? FileManager.default.contentsOfDirectory(atPath: "/proc")) ?? []
+        return entries.compactMap { entry in
+            guard let pid = Int32(entry),
+                  let comm = try? String(contentsOfFile: "/proc/\(entry)/comm", encoding: .utf8)
+            else { return nil }
+            return (pid: pid, name: comm.trimmingCharacters(in: .newlines))
+        }
+        #else
+        return []
+        #endif
     }
 }
