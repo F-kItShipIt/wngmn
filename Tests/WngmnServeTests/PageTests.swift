@@ -1212,3 +1212,153 @@ struct StatusPillTests {
         #expect(try PageTests.evaluate(feed) == "capturing")
     }
 }
+
+/// A screenshot as a row in the transcript.
+///
+/// It is the first row that did not come from the recogniser, and the page had assumed every
+/// row did: a latency to print, a speaker who is the caller or you, words to escape, an Ask
+/// to offer. These are asserted on the page's own state and on the markup it wrote, not
+/// through the stub DOM — its `querySelector` returns an element for anything and its
+/// `classList` is inert, so a test written the obvious way would pass whatever the page did.
+@Suite("Screenshot rows")
+struct ScreenshotRowTests {
+    static let shot = "{type:'shot', key:'screen@83.412', t:83.412, mode:'region', w:1500, h:900, bytes:412380}"
+    static let question = "{type:'question', text:'Let me paste this here.', t0:80, t1:82, ms:90}"
+
+    func run(_ body: String) throws -> String {
+        try PageTests.evaluate("(() => { \(body) })()")
+    }
+
+    /// Born asked. "Asking…" is not a state of its own on this page — it is what an asked row
+    /// with no answer shows — and an un-asked shot row could be asked: Enter on the selected
+    /// row, the phone caption's button and the stage's own Ask all reach `ask(q)`, which would
+    /// post the row's *label* to /ask as if somebody had said it.
+    @Test("A shot frame makes a row that is already asked, labelled from its size", .enabled(if: PageTests.nodeIsAvailable))
+    func makesAnAskedRow() throws {
+        let got = try run("""
+            handleEvent(\(Self.shot));
+            const q = questions[0];
+            return [questions.length, q.kind, q.key, q.text, q.asked, q.t0].join("|");
+            """)
+        #expect(got == "1|shot|screen@83.412|Screenshot · region · 1500×900|true|83.412")
+    }
+
+    @Test("Its row says Screen, with no latency tag and no Ask button", .enabled(if: PageTests.nodeIsAvailable))
+    func rowMarkup() throws {
+        let html = try run("handleEvent(\(Self.shot)); return questions[0].el.innerHTML;")
+        #expect(html.contains("Screen"))
+        #expect(html.contains("Screenshot · region · 1500×900"))
+        #expect(!html.contains(" ms<"), "a screenshot has no latency: \(html)")
+        #expect(!html.contains("class=\"ask\""), "it is already asked: \(html)")
+        #expect(!html.contains("Caller"))
+    }
+
+    /// The only sign the keypress did anything — the shutter is silenced.
+    @Test("It goes on the stage, asking, whatever was there", .enabled(if: PageTests.nodeIsAvailable))
+    func takesTheStage() throws {
+        let got = try run("""
+            handleEvent(\(Self.question));
+            activate(questions[0]);
+            handleEvent(\(Self.shot));
+            return (onStage === questions[1]) + "|" + document.getElementById("stageHead").innerHTML
+                + "|" + document.getElementById("stageBody").innerHTML;
+            """)
+        #expect(got.hasPrefix("true|"))
+        #expect(got.contains("Screen"))
+        #expect(!got.contains("Caller"), "the stage head called a screenshot the caller")
+        #expect(got.contains("Asking"))
+    }
+
+    /// A reconnecting page is caught up from a replay buffer onto rows it already has. The
+    /// frame that stages a new shot must not, replayed, drag the reader back to an old one.
+    @Test("The same shot twice is one row, and does not take the stage back", .enabled(if: PageTests.nodeIsAvailable))
+    func replayIsIdempotent() throws {
+        let got = try run("""
+            handleEvent(\(Self.question));
+            handleEvent(\(Self.shot));
+            activate(questions[0]);
+            handleEvent(\(Self.shot));
+            return questions.length + "|" + (onStage === questions[0]);
+            """)
+        #expect(got == "2|true")
+    }
+
+    @Test("Its answer finds it by the key the frame carried", .enabled(if: PageTests.nodeIsAvailable))
+    func answerFindsTheRow() throws {
+        let got = try run("""
+            handleEvent(\(Self.shot));
+            handleEvent({type:'answer_done', key:'screen@83.412', text:'A two-pointer merge.'});
+            return questions[0].answer + "|" + document.getElementById("stageBody").innerHTML;
+            """)
+        #expect(got.hasPrefix("A two-pointer merge.|"))
+        #expect(got.contains("two-pointer merge"))
+        #expect(!got.contains("Asking"))
+    }
+
+    @Test("A failed shot shows its reason on the stage", .enabled(if: PageTests.nodeIsAvailable))
+    func failureShowsItsReason() throws {
+        let got = try run("""
+            handleEvent({type:'shot', key:'screen@12.5', t:12.5, mode:'screen', w:0, h:0, bytes:0});
+            handleEvent({type:'answer_failed', key:'screen@12.5', detail:'Screen Recording is not granted'});
+            return questions[0].text + "|" + document.getElementById("stageBody").innerHTML;
+            """)
+        #expect(got.hasPrefix("Screenshot · screen|"), "a shot that was never taken has no size to print")
+        #expect(got.contains("Screen Recording is not granted"))
+    }
+
+    /// Not cosmetic. With a row that has no `ms`, `worst` came out undefined, `max` NaN, and
+    /// every bar in the chart was drawn at NaN — the whole chart, not one odd bar — while the
+    /// median and worst tiles printed "undefined".
+    @Test("A shot stays out of the latency chart and the question count", .enabled(if: PageTests.nodeIsAvailable))
+    func staysOutOfTheNumbers() throws {
+        let got = try run("""
+            handleEvent(\(Self.question));
+            handleEvent(\(Self.shot));
+            return document.getElementById("count").textContent + "|" + document.getElementById("chart").innerHTML
+                + "|" + document.getElementById("median").textContent + "|" + document.getElementById("worst").textContent;
+            """)
+        #expect(got.hasPrefix("1|"), "two rows, one question: \(got.prefix(12))")
+        #expect(!got.contains("NaN"))
+        #expect(!got.contains("undefined"))
+    }
+
+    /// With the microphone off the wire carries no speaker at all, and a falsy speaker used to
+    /// mean "the last row, whatever it is". A test that passes a speaker goes green without
+    /// the fix: 'screen' is never 'caller' or 'you', so that branch already skipped it.
+    @Test("A revision never replaces a shot, even with no speaker on the wire", .enabled(if: PageTests.nodeIsAvailable))
+    func revisionSkipsShots() throws {
+        let got = try run("""
+            handleEvent({type:'question', text:'Tell me about', t0:70, t1:71, ms:80});
+            handleEvent(\(Self.shot));
+            handleEvent({type:'question', text:'Tell me about the round.', t0:70, t1:73, ms:85, revises:true});
+            return questions.map(q => q.kind || q.text).join("|");
+            """)
+        #expect(got == "Tell me about the round.|shot")
+    }
+
+    /// Manual Ask stays stateless by design — it does not see the picture — so it must not see
+    /// the picture's label either, offered to the model as something that was said.
+    @Test("A later Ask does not pass the shot's label off as speech", .enabled(if: PageTests.nodeIsAvailable))
+    func askContextSkipsShots() throws {
+        let got = try run("""
+            handleEvent(\(Self.question));
+            handleEvent(\(Self.shot));
+            handleEvent({type:'question', text:'Can you do it in place?', t0:90, t1:92, ms:88});
+            return JSON.stringify(recentBefore(questions, questions[2]));
+            """)
+        #expect(got == #"["Let me paste this here."]"#)
+    }
+
+    @Test("Nothing that can ask a row asks a shot", .enabled(if: PageTests.nodeIsAvailable))
+    func aShotIsNeverAsked() throws {
+        let got = try run("""
+            const sent = [];
+            globalThis.fetch = (url, opts) => { sent.push(opts.body); return Promise.resolve({ ok: true }); };
+            document.getElementById("prefetch").checked = true;
+            handleEvent(\(Self.shot));
+            ask(questions[0]);
+            return String(sent.length);
+            """)
+        #expect(got == "0")
+    }
+}
