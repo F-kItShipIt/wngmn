@@ -217,9 +217,11 @@ Emits one metric line carrying the most recent window's level:
 ```
 
 One per buffer delivered by the tap (or per 512-frame chunk offline), so it is very noisy —
-threshold tuning only, and never left on for a real call. It applies to `run` and `offline`;
-the microphone source does not emit it. Metrics are not replayable, so they go to stdout but
-are never held for a page that reconnects.
+threshold tuning only, and never left on for a real call. It applies to `run` and `offline`.
+With the microphone on, `run` adds `mic_db` for every mic buffer — as captured, before any
+silencing — and, each time the echo gate refits, `echo_likeness`, `echo_gain_db` and
+`echo_lag_ms` ([below](#the-microphone-endpointer)). Metrics are not replayable, so they go
+to stdout but are never held for a page that reconnects.
 
 The point of it is to pick `--open-db` from a distribution rather than from a guess:
 
@@ -254,12 +256,52 @@ shared with the tap's defaults. `--mic-open-db` is dBFS and must be negative;
 `--mic-device <uid>` picks an input other than the system default, and implies `--mic`. Use
 `wngmn devices` to find the UID.
 
-**The mic half assumes headphones.** On speakers the microphone also hears the caller, and
-the same sentence is transcribed twice, once under each label; the binary warns at startup
-if the default output looks like a speaker device. A Bluetooth microphone has a cost of its
-own: using it puts the link into duplex mode and the caller arrives at phone quality. The
-tap follows the link's rate, so they are still transcribed; a different microphone keeps
-the link at full rate.
+**The mic half works on speakers.** There the microphone hears the caller as well as you.
+Measured on a MacBook Pro at volume 81: the built-in mic heard the built-in speakers at
+−17.8 dBFS over a −56.1 dBFS room, and every sentence the caller spoke arrived twice — once
+from the tap as `caller`, once from the mic as `you`, 32 ms apart and word for word. So while
+the far end's echo is loud enough to be taken for speech, the mic's audio is replaced with
+silence before its endpointer or its recogniser hears it. The tap already has that half,
+clean.
+
+That is half-duplex, not echo cancellation: **what you say while they are talking is lost
+with the echo.** On headphones there is no echo and nothing should be lost, and a device's
+name is only a guess at the route, so the gate measures it — and measures the one thing an
+echo is and your voice is not: a copy. For each lag from 0 to 500 ms it keeps the newest five
+seconds *of loud far end* at that lag (above −35 dBFS; counted in far-end sound, not by the
+clock, so an interviewer who only ever says "mm-hm" still adds up), and looks for the lag at
+which the mic's level best follows the far end's, buffer by buffer. When Pearson's r there is
+0.65 or more the mic is a copy. Built-in speakers into the built-in mic measured 0.74 to 0.82;
+two recorded voices talking over each other never passed 0.54. The median difference in level
+is then the route's gain (−6 dB, measured), and a buffer is silenced when the far end, through
+that gain, could open the mic's detector — from the moment they speak until 200 ms after they
+stop, for the room. An echo that could never open the mic (earbuds leaking a murmur, a speaker
+turned right down, a fan behind the caller) is left alone.
+
+Nothing is concluded until every lag has two seconds of evidence, and until then it assumes
+speakers and silences the mic while the far end is loud and for 0.7 s after. Deaf for a moment
+on headphones costs an interjection; open for a moment on speakers is the caller's first
+sentence, twice. A failed fit does not end that doubt by itself: an echo is a floor under the
+mic, so "no echo" needs moments when the far end was loud and the mic sat quietly under it —
+which on headphones is the first time the caller talks while you listen, and which a call that
+opens with both of you talking is not. Once found, an echo is not forgotten because you talked
+over it. A copy in the newest two seconds alone is the same echo at a new volume, and takes
+its new gain; otherwise it is forgotten only when the mic goes 10 dB *under* what the echo
+should be, which an echo cannot do: that is a pair of headphones going in, and it takes about
+two seconds of them talking. The other direction takes around five. A mic below −80 dBFS is
+muted or stopped, not a room, and counts as nothing. An output more than half a second late —
+AirPlay — is not recognised as an echo; use headphones there.
+
+The decision is reported when it is made, as `{"type":"warning","code":"mic_hears_call",...}`,
+and withdrawn as `mic_hears_call_cleared`. `--no-echo-gate` turns it off. `--debug-vad` adds
+`mic_db` for every mic buffer, and `echo_likeness`, `echo_gain_db` and `echo_lag_ms` for every
+fit.
+
+A Bluetooth microphone has a cost of its own: using it puts the link into duplex mode and
+the caller arrives at phone quality. The tap follows the link's rate, so they are still
+transcribed; a different microphone keeps the link at full rate. Earbuds can also leak the
+call into their own microphone — one pair, out of the ear, measured −21.8 dBFS against a
+−54 dBFS room — and the gate treats that as what it is.
 
 ---
 

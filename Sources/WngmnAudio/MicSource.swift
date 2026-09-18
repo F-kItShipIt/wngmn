@@ -21,6 +21,9 @@ public actor MicSource {
         public var endpointer: EndpointerConfig
         public var terms: TermList
         public var emitPartials: Bool
+        /// Emit the mic's level, and the far end's beside it, for every buffer. Threshold
+        /// tuning only: it is a hundred lines a second.
+        public var debugVAD: Bool
         /// Shared with the answer path, so both halves see one version of the profile.
         public var profiles: ProfileSource?
 
@@ -30,6 +33,7 @@ public actor MicSource {
             endpointer: EndpointerConfig = .init(),
             terms: TermList = .empty,
             emitPartials: Bool = true,
+            debugVAD: Bool = false,
             profiles: ProfileSource? = nil
         ) {
             self.capture = capture
@@ -37,6 +41,7 @@ public actor MicSource {
             self.endpointer = endpointer
             self.terms = terms
             self.emitPartials = emitPartials
+            self.debugVAD = debugVAD
             self.profiles = profiles
         }
     }
@@ -51,12 +56,21 @@ public actor MicSource {
     /// Long enough that an ordinary pause between sentences does not trip it, short enough
     /// that a denied microphone is reported while there is still time to fix it.
     private static let silentWarningSeconds: Double = 20
+    /// How long a buffer may wait for the tap to report on its stretch of time. The tap is
+    /// normally ahead — its copy of a sound is 32 ms earlier than the mic's — so this is only
+    /// ever reached when the tap's loop is stuck behind the recogniser, as it can be while two
+    /// analysers warm up at once, or is not running. Your own words are never read back, so a
+    /// second late costs nothing; a buffer judged without the tap is a buffer of echo let in.
+    private static let tapWaitLimit = 1.0
 
     private let configuration: Configuration
     private let writer: EventWriter
     private let timeline: CaptureTimeline
     private let control: CaptureControl
     private let capture: MicCapture
+    /// What the tap is hearing. Nil leaves the mic as it is captured.
+    private let farEnd: FarEndActivity?
+    private var gate: EchoGate
 
     private var transcriber: Transcriber?
     private var endpointer: Endpointer
@@ -77,14 +91,25 @@ public actor MicSource {
         configuration: Configuration,
         writer: EventWriter,
         timeline: CaptureTimeline,
-        control: CaptureControl = CaptureControl()
+        control: CaptureControl = CaptureControl(),
+        farEnd: FarEndActivity? = nil
     ) {
         self.configuration = configuration
         self.writer = writer
         self.timeline = timeline
         self.control = control
+        self.farEnd = farEnd
+        // Judged against the threshold this mic was actually given, so a `--mic-open-db`
+        // from `miccheck` moves what counts as an echo worth removing along with it.
+        var gateConfig = EchoGate.Config()
+        gateConfig.micOpenDB = configuration.endpointer.openThresholdDB
+        gate = EchoGate(config: gateConfig)
         capture = MicCapture(configuration: configuration.capture)
-        endpointer = Endpointer(config: configuration.endpointer)
+        // A buffer the gate silenced is not a quiet room, and must not teach the detector's
+        // noise floor that it is one.
+        var detector = configuration.endpointer
+        detector.floorIgnoresDigitalSilence = farEnd != nil
+        endpointer = Endpointer(config: detector)
         var assembler = QuestionAssembler(terms: configuration.terms)
         assembler.finalTimeout = Self.finalTimeout
         self.assembler = assembler
@@ -181,6 +206,10 @@ public actor MicSource {
             return
         }
         while let peek = capture.ring.peekSegment() {
+            // Left in the ring until the tap has said what the far end was doing then. Judged
+            // without that, a buffer of echo looks exactly like a buffer of you.
+            if let farEnd, isAheadOfTheTap(peek, farEnd: farEnd) { return }
+
             if peek.frameCount > scratch.count {
                 scratch = [Float](repeating: 0, count: peek.frameCount * 2)
             }
@@ -194,13 +223,19 @@ public actor MicSource {
             timeline.anchor(segment.hostTime)
             let start = timeline.seconds(forHostTime: segment.hostTime) ?? 0
 
+            // One step, in `WngmnCore` where its order is tested: measured, judged, silenced,
+            // and only then shown to the endpointer. The recogniser below is fed the same
+            // buffer, so what was silenced for one is silent for both.
             var events: [EndpointerEvent] = []
-            scratch.withUnsafeBufferPointer { buffer in
-                endpointer.push(
-                    UnsafeBufferPointer(rebasing: buffer[0..<segment.frameCount]),
-                    startTime: start, sampleRate: capture.format.sampleRate
+            let fitBefore = gate.lastFitMade
+            let step = scratch.withUnsafeMutableBufferPointer { buffer in
+                gate.process(
+                    UnsafeMutableBufferPointer(rebasing: buffer[0..<segment.frameCount]),
+                    start: start, sampleRate: capture.format.sampleRate,
+                    farEnd: farEnd, endpointer: &endpointer
                 ) { events.append($0) }
             }
+            report(step, fitChanged: gate.lastFitMade != fitBefore)
 
             if let transcriber {
                 // Aligned to the shared timeline before feeding, as the tap is. The mic's
@@ -218,6 +253,55 @@ public actor MicSource {
         }
     }
 
+    private func isAheadOfTheTap(_ segment: AudioSegment, farEnd: FarEndActivity) -> Bool {
+        guard segment.hostTime != 0 else { return false }
+        timeline.anchor(segment.hostTime)
+        guard let start = timeline.seconds(forHostTime: segment.hostTime),
+              let now = timeline.seconds(forHostTime: HostClock.now())
+        else { return false }
+        return Self.shouldWaitForTheTap(
+            segmentEnd: start + Double(segment.frameCount) / capture.format.sampleRate,
+            knownThrough: farEnd.knownThrough, now: now, limit: Self.tapWaitLimit)
+    }
+
+    /// Whether a mic buffer should stay in the ring a little longer. Pure, so the rule — and
+    /// above all that it gives up — can be asserted without a microphone or a tap.
+    static func shouldWaitForTheTap(
+        segmentEnd: Double, knownThrough: Double, now: Double, limit: Double
+    ) -> Bool {
+        knownThrough < segmentEnd && now - segmentEnd < limit
+    }
+
+    /// Says what the gate decided, when it decides it: the route is measured, and until the
+    /// caller has spoken there is nothing to measure. Two codes, because a page or a log
+    /// reader filtering on one must not have to parse prose to tell "it started" from "it
+    /// stopped". Not said for a mic the call never reached, which is what was assumed.
+    private func report(_ step: EchoGate.Step, fitChanged: Bool) {
+        switch step.announcement {
+        case .hearsTheCall:
+            writer.emit(.warning(
+                code: "mic_hears_call",
+                detail: "your microphone can hear the call — through the speakers, or earbuds "
+                    + "leaking into their own mic — so it is ignored while the other side is "
+                    + "talking. Anything you say over them is not transcribed; a microphone the "
+                    + "call cannot reach keeps it"))
+        case .noLongerHearsTheCall:
+            writer.emit(.warning(
+                code: "mic_hears_call_cleared",
+                detail: "your microphone no longer hears the call; it is listened to all the time again"))
+        case nil:
+            break
+        }
+        guard configuration.debugVAD else { return }
+        // As captured, not as silenced: the point is to see what the gate saw.
+        writer.emit(.metric(name: "mic_db", value: step.micDB, unit: "dBFS"))
+        if fitChanged, let fit = gate.lastFitMade {
+            writer.emit(.metric(name: "echo_likeness", value: fit.likeness, unit: "r"))
+            writer.emit(.metric(name: "echo_gain_db", value: fit.gainDB, unit: "dB"))
+            writer.emit(.metric(name: "echo_lag_ms", value: fit.lag * 1000, unit: "ms"))
+        }
+    }
+
     /// Walks the recogniser forward through silence when nothing is being fed.
     ///
     /// The mic delivers continuously, so unlike the tap it never stalls — except while
@@ -232,7 +316,8 @@ public actor MicSource {
         let cursor = await transcriber.cursorSeconds
         guard let target = Self.idleAdvanceTarget(
             now: now, cursor: cursor,
-            allowance: Self.deliveryLagAllowance, threshold: Self.silenceThreshold
+            allowance: Self.deliveryLagAllowance, threshold: Self.silenceThreshold,
+            bufferWaiting: capture.ring.peekSegment() != nil
         ) else { return }
         try await transcriber.advance(toStreamSeconds: target)
     }
@@ -240,9 +325,15 @@ public actor MicSource {
     /// Where to walk the recogniser to, or nil when it is close enough behind the clock.
     /// Only time the mic has certainly finished delivering is ever filled. Pure, so the rule
     /// can be asserted without a microphone.
+    ///
+    /// A buffer waiting in the ring — held back until the tap has reported on its stretch of
+    /// time — is audio, not idleness. Walked past, it would be fed behind the recogniser's
+    /// cursor, and every timestamp after it would sit late by however long it waited.
     static func idleAdvanceTarget(
-        now: Double, cursor: Double, allowance: Double, threshold: Double
+        now: Double, cursor: Double, allowance: Double, threshold: Double,
+        bufferWaiting: Bool = false
     ) -> Double? {
+        guard !bufferWaiting else { return nil }
         let settled = now - allowance
         return settled - cursor > threshold ? settled : nil
     }

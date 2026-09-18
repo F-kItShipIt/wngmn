@@ -9,7 +9,7 @@ page you read during a call has [PAGE.md](PAGE.md).
 
 ## Examples you'll actually type
 
-Both halves of the call, labelled Caller and You. Headphones on, or your mic hears them too.
+Both halves of the call, labelled Caller and You. On speakers your mic hears them too, so it is ignored while they talk ([TUNING.md](TUNING.md#the-microphone-endpointer)); on headphones nothing of yours is lost.
 
 ```sh
 wngmn --serve --mic --profile me.md

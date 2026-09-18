@@ -168,6 +168,5 @@ one-line pitch.
 
 There is no recording of the two-speaker transcript, the one where lines are labelled Caller
 and You. `offline` never opens the microphone — it replays a file through the tap path only —
-so the "You" half cannot be produced from a fixture. Capturing it honestly needs a live call
-with headphones on, because on speakers the microphone hears the caller too and the same
-sentence is transcribed under both labels.
+so the "You" half cannot be produced from a fixture. Capturing it honestly needs a live call,
+and someone to be the other half of it.

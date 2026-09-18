@@ -174,7 +174,7 @@ Out of the box wngmn hears **them, not you** — it exists to catch their questi
 wngmn --listen --global --mic
 ```
 
-It uses whatever mic and speakers your Mac is using — the built-in ones are fine, and nothing needs plugging in first. One catch on speakers: your mic hears the other person too, so their lines can show up twice. Headphones fix that. Wired beats AirPods: a Bluetooth headset using its own mic drops the call to phone quality.
+It uses whatever mic and speakers your Mac is using — the built-in ones are fine, and nothing needs plugging in first. On speakers your mic hears the other person too, so wngmn notices and ignores your mic while they're talking: their words show up once, as theirs. The price: anything you say *over* them is lost. On headphones nothing is. Wired beats AirPods: a Bluetooth headset using its own mic drops the call to phone quality.
 
 ### Stop it hearing them, or you
 
@@ -228,7 +228,8 @@ Nothing here prints an error. It just goes quiet — so check the night before.
 | No lines when **they** talk | Without `--global`, wngmn only hears Zoom and Chrome | Add `--global` |
 | Still no lines, with `--global` | macOS isn't letting Terminal listen — or the call isn't playing on this Mac | `wngmn selftest`. FAIL → fix the permission in step 1. PASS → make sure the call's sound is coming out of this Mac, not your phone |
 | No lines when **you** talk | Your mic is off unless you ask | Add `--mic`. If macOS asks about the microphone, say yes — it's asking for Terminal |
-| Every line shows up twice | `--mic` on speakers: your mic is hearing them | Headphones, or drop `--mic` |
+| Their lines show up twice, as Caller and as You | Your mic hears them through the speakers, and wngmn hasn't caught it — a very echoey room, or `--no-echo-gate` | Headphones, or drop `--mic` |
+| My words go missing when we talk at once | On speakers, wngmn ignores your mic while they're talking | Headphones |
 | Lines, but no answers | No key, or **auto** is unticked | `echo $ANTHROPIC_API_KEY` — empty means it isn't saved. Tick **auto** |
 | Lines, a few answers, mostly nothing | It only answers questions. Small talk gets none | Nothing is wrong |
 | Screenshot says *Screen Recording is not granted* | macOS hasn't let Terminal see the screen | Same Settings pane as `selftest`, top list → quit Terminal, start again |

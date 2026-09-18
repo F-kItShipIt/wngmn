@@ -594,6 +594,10 @@ struct Wngmn {
         // the fallback when a forced final comes back empty.
         transcriberConfiguration.volatileResults = true
 
+        // What the tap hears, told to a microphone that may be hearing it too. Only made when
+        // there is a microphone to tell.
+        let farEnd = options.mic && options.echoGate ? FarEndActivity() : nil
+
         let pipeline = Pipeline(
             configuration: Pipeline.Configuration(
                 tap: tapConfiguration,
@@ -608,7 +612,8 @@ struct Wngmn {
             ),
             writer: writer,
             timeline: timeline,
-            control: control
+            control: control,
+            farEnd: farEnd
         )
         // Synchronous: a Task here would lose the race against exit().
         teardown.onTeardown { pipeline.stop() }
@@ -619,7 +624,7 @@ struct Wngmn {
             return
         }
 
-        warnIfNotOnHeadphones()
+        noteIfOnSpeakers(gated: farEnd != nil)
         noteIfRouteRunsInDuplex()
         let mic = MicSource(
             configuration: MicSource.Configuration(
@@ -628,11 +633,13 @@ struct Wngmn {
                 endpointer: options.micEndpointer,
                 terms: terms,
                 emitPartials: options.emitPartials,
+                debugVAD: options.debugVAD,
                 profiles: profiles
             ),
             writer: writer,
             timeline: timeline,
-            control: control
+            control: control,
+            farEnd: farEnd
         )
         teardown.onTeardown { mic.stop() }
 
@@ -666,9 +673,6 @@ struct Wngmn {
         }
     }
 
-    /// The mic is assumed to be hearing only you. On speakers it also hears the caller, and
-    /// the same sentence arrives twice under both labels — which reads as the caller
-    /// stuttering rather than as a configuration mistake, so it is worth saying up front.
     /// The route that silently removes the caller from the transcript.
     ///
     /// Said at startup and again in `devices`. The capture graph follows the clock device's
@@ -687,16 +691,22 @@ struct Wngmn {
         )
     }
 
-    private static func warnIfNotOnHeadphones() {
+    /// A guess from the device's name, and only ever used to say something: what is done
+    /// about it is decided by `EchoGate`, which measures the route instead.
+    private static func noteIfOnSpeakers(gated: Bool) {
         guard let output = AudioCatalog.defaultOutputDevice() else { return }
         let name = AudioCatalog.deviceName(output)
         let soundsLikeHeadphones = ["headphone", "airpod", "earbud", "headset", "buds"]
             .contains { name.lowercased().contains($0) }
         guard !soundsLikeHeadphones else { return }
         EventWriter.note(
-            "wngmn: output is '\(name)', which does not look like headphones — if the "
-            + "caller is audible through it, your mic will hear them too and their words "
-            + "will appear under both Caller and You."
+            gated
+                ? "wngmn: output is '\(name)'. If your mic can hear it, wngmn ignores the mic "
+                    + "while the other side is talking, so their words are not transcribed twice. "
+                    + "What you say over them is lost; on headphones nothing is."
+                : "wngmn: output is '\(name)', which does not look like headphones, and "
+                    + "--no-echo-gate is set: if your mic can hear it, the caller's words will "
+                    + "appear under both Caller and You."
         )
     }
 
