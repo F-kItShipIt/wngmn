@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import WngmnCore
 
@@ -28,6 +29,15 @@ struct StopCommandTests {
         // Matched exactly, case-sensitively: `wngmnd` and `mywngmn` are somebody
         // else's process, and killing a stranger's daemon is not a recoverable mistake.
         #expect(RunningProcesses.stoppable(running, excluding: 1) == [10])
+    }
+
+    /// The list is read from the kernel a different way on each operating system — sysctl
+    /// on macOS, /proc on Linux — and an empty list is indistinguishable from "nothing to
+    /// stop". So the one process certain to be running is looked for: this one.
+    @Test("It can see the process asking")
+    func seesItself() {
+        let own = ProcessInfo.processInfo.processIdentifier
+        #expect(RunningProcesses.all().contains { $0.pid == own })
     }
 
     @Test("Nothing running is not an error")

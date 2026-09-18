@@ -14,7 +14,9 @@ struct GoldenVADTests {
 
     static func load(_ name: String) throws -> [Float] {
         let url = try #require(
-            Bundle.module.url(forResource: "Fixtures/\(name)", withExtension: "s16le16k"),
+            // By subdirectory rather than a slash in the name, which only Apple's Foundation
+            // resolves.
+            Bundle.module.url(forResource: name, withExtension: "s16le16k", subdirectory: "Fixtures"),
             "fixture \(name) is missing"
         )
         let data = try Data(contentsOf: url)
