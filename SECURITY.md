@@ -248,13 +248,21 @@ header; ticked, it asks for every caller question the moment it lands, so that q
 recent transcript and your whole profile go to the API with no press. It is off by default and
 is not remembered across page loads.
 
-**The default tap scope is the whole of Chrome, not just the call.** The default bundle list
-is `us.zoom.xos`, `us.zoom.CptHost`, `us.zoom.caphost`, `com.google.Chrome` and
-`com.google.Chrome.helper`, because Meet audio comes from a helper process and which one
-carries it has to be resolved rather than assumed. Anything else Chrome plays during a
-session — a second tab, a video, a notification — is transcribed as the caller, written to
-the log, and with prefetch on sent to the API. `--bundle-id` narrows the scope; `--global`
-widens it to everything the machine plays.
+**The default tap scope is everything the Mac plays, not just the call.** Since 0.4.0 the
+tap is global unless told otherwise, because a list of apps was silence for every call that
+was not in one of them. Anything the machine plays during a session — a video in another
+tab, a voice note, a notification — is transcribed as the caller, written to the log, and
+with auto on (the default) sent to the API as a turn. `--call-apps` narrows it to the apps
+wngmn knows (`us.zoom.xos`, `us.zoom.CptHost`, `us.zoom.caphost`, `com.google.Chrome` and
+`com.google.Chrome.helper` — still the whole of Chrome, because Meet audio comes from a
+helper process and which one carries it has to be resolved rather than assumed), and
+`--bundle-id` to one you name.
+
+**The microphone is on by default.** Since 0.4.0 your own side is captured too, unless you
+pass `--no-mic`. It is transcribed on the machine like the caller's; its text is written to
+the log and, with auto on, your turns of four words or more go to the API. macOS asks for
+Microphone access once, for the terminal application, and the page's **mic on** control
+stops the device outright.
 
 **The System Audio Recording grant belongs to the parent process.** Run from a shell and the
 permission is your terminal application's, which means it covers every program that terminal

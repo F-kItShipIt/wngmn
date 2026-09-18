@@ -240,7 +240,8 @@ crossings between them.
     last id it saw in `Last-Event-ID`, which is how the server knows what a returning page
     already has.
 
-`--mic` adds a second, parallel copy of steps 1–13 through `MicCapture` and `MicSource`,
+The microphone — on unless `--no-mic` — is a second, parallel copy of steps 1–13 through
+`MicCapture` and `MicSource`,
 sharing the `EventWriter` and the `CaptureTimeline`. It is a sibling of `Pipeline` rather
 than a second source inside it: `Pipeline` carries the aggregate-rebuild, device-watch and
 keep-alive machinery that a live call depends on, and a microphone is not tap-backed, so

@@ -9,30 +9,36 @@ page you read during a call has [PAGE.md](PAGE.md).
 
 ## Examples you'll actually type
 
-Both halves of the call, labelled Caller and You. On speakers your mic hears them too, so it is ignored while they talk ([TUNING.md](TUNING.md#the-microphone-endpointer)); on headphones nothing of yours is lost.
+Both halves of the call, labelled Caller and You, from whatever app the call is in. That is what it does with no flags at all. On speakers your mic hears them too, so it is ignored while they talk ([TUNING.md](TUNING.md#the-microphone-endpointer)); on headphones nothing of yours is lost.
 
 ```sh
-wngmn --serve --mic --profile me.md
+wngmn --serve --profile me.md
 ```
 
-Pick the input and stop guessing the threshold. `--mic-device` switches `--mic` on for you.
+Their side only.
+
+```sh
+wngmn --serve --no-mic --profile me.md
+```
+
+Pick the input and stop guessing the threshold.
 
 ```sh
 wngmn miccheck
 wngmn --serve --mic-device "BuiltInMicrophoneDevice" --mic-open-db -31 --profile me.md
 ```
 
-Something other than Zoom or Chrome. Run `devices` mid-call; the audio never comes from the process you'd bet on.
+It hears everything the Mac plays. Yes, your music too. Keep it to the call apps it knows, Zoom and Chrome.
+
+```sh
+wngmn --serve --call-apps --profile me.md
+```
+
+Or to one app you name. Run `devices` mid-call; the audio never comes from the process you'd bet on.
 
 ```sh
 wngmn devices                                          # mid-call
 wngmn --serve --bundle-id <id you saw> --profile me.md
-```
-
-Everything the Mac plays. Yes, your music too.
-
-```sh
-wngmn --global --serve --profile me.md
 ```
 
 A token you choose. Switches on `--listen`. Plain `--listen` already stores a generated token and reuses it every run, so its URL is stable too; `--new-token` replaces that stored one. A `--token` you pass changes when you pass a different one.
@@ -71,7 +77,7 @@ wngmn has no hotkey of its own, on purpose: bind those two to keys. In the Short
 All of it, at once, for the interview that matters.
 
 ```sh
-wngmn --global --serve --listen --mic --mic-device "BuiltInMicrophoneDevice" --mic-open-db -31 --ask-effort medium
+wngmn --listen --mic-device "BuiltInMicrophoneDevice" --mic-open-db -31 --ask-effort medium
 ```
 
 ## Auto, and your own turns

@@ -15,7 +15,39 @@ struct OptionsTests {
         #expect(o.bundleIDs.contains("us.zoom.CptHost"))
         #expect(o.bundleIDs.contains("us.zoom.caphost"))
         #expect(o.fastResults)
-        #expect(o.globalTap == false)
+    }
+
+    /// It used to hear Zoom and Chrome and nothing else, unless told `--global`. A call in
+    /// Teams, FaceTime, Slack or Safari was silence with every status code reading success,
+    /// and the README ended up putting `--global` on every command it printed — which is a
+    /// default, spelled the long way.
+    @Test("It hears whatever app the call is in, unless told which")
+    func hearsEveryAppByDefault() throws {
+        #expect(try Options.parse([]).globalTap)
+        let named = try Options.parse(["--bundle-id", "com.example.a"])
+        #expect(!named.globalTap, "naming an app is asking for that app")
+        #expect(named.bundleIDs == ["com.example.a"])
+        let calls = try Options.parse(["--call-apps"])
+        #expect(!calls.globalTap)
+        #expect(calls.bundleIDs.contains("us.zoom.CptHost") && calls.bundleIDs.contains("com.google.Chrome.helper"))
+        #expect(Options.usage.contains("--call-apps"))
+    }
+
+    @Test("A run says what it is listening to, and how to make that less")
+    func listeningNote() throws {
+        let everything = try Options.parse([]).listeningNote
+        #expect(everything.contains("everything this Mac plays") && everything.contains("--call-apps"))
+        #expect(everything.contains("your microphone") && everything.contains("--no-mic"))
+        let narrow = try Options.parse(["--bundle-id", "com.example.a", "--no-mic"]).listeningNote
+        #expect(narrow.contains("only com.example.a") && narrow.contains("microphone is off"))
+    }
+
+    /// Commands written for 0.3 still mean what they meant.
+    @Test("--global is still accepted, and still wins over a named app")
+    func globalStillParses() throws {
+        #expect(try Options.parse(["--global"]).globalTap)
+        #expect(try Options.parse(["--global", "--bundle-id", "com.example.a"]).globalTap)
+        #expect(try Options.parse(["--bundle-id", "com.example.a", "--global"]).globalTap)
     }
 
     @Test("Commands and their options parse together")
@@ -118,11 +150,16 @@ struct AskOptionsTests {
 /// Microphone capture: the "You" half of a two-speaker transcript.
 @Suite("Mic options")
 struct MicOptionsTests {
-    @Test("The mic is off unless asked for")
-    func micDefaultsOff() throws {
-        #expect(try !Options.parse([]).mic)
+    /// It was off unless asked for, because on speakers the mic re-heard the caller and every
+    /// line doubled. That is `EchoGate`'s job now, and a tool that answers a conversation
+    /// should not need telling to listen to both halves of it.
+    @Test("Your side of the call is heard unless that is turned off")
+    func micDefaultsOn() throws {
+        #expect(try Options.parse([]).mic)
         #expect(try Options.parse([]).micDeviceUID == nil)
-        #expect(try Options.parse(["--mic"]).mic)
+        #expect(try !Options.parse(["--no-mic"]).mic)
+        #expect(try Options.parse(["--mic"]).mic, "commands written for 0.3 still parse")
+        #expect(Options.usage.contains("--no-mic"))
     }
 
     /// Naming a device is an unambiguous request to capture from it; making the user pass

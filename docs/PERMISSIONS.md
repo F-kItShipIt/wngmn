@@ -123,7 +123,7 @@ that worked last week is not evidence about today.
 
 ## The microphone entitlement
 
-Only relevant to `--mic`, `miccheck`, and only in the bundle.
+Relevant to the microphone half (on unless `--no-mic`) and to `miccheck`, and only in the bundle.
 
 Under the hardened runtime (`codesign --options runtime`), microphone access is denied by AMFI
 *before TCC is ever consulted* unless the binary carries
@@ -140,10 +140,10 @@ Two traps around it, both already hit:
   there:
 
   ```
-      WARNING  the bundle carries no microphone entitlement; --mic will capture silence
+      WARNING  the bundle carries no microphone entitlement; the microphone will capture silence
   ```
 
-  If you see that line, `--mic` will not work no matter what System Settings says.
+  If you see that line, the microphone half will not work no matter what System Settings says.
 
 ## Screen Recording, for `wngmn shot`
 
@@ -252,20 +252,22 @@ real call. Decide the route before the interview and do not touch it afterwards.
 
 Work through this well before any interview, not on the day.
 
-1. **Choose the audio route and then leave it alone.** System Settings → Sound. For a
-   run without `--mic`, the built-in microphone and built-in speakers are the safest
-   combination: nothing in that route can carry your own voice back into the output stream
-   the tap reads. Set the microphone explicitly in the conferencing app too — not "Same as
-   System" — because a virtual audio device installed by some other application is a common
-   default and may be capturing nothing. With `--mic` the same route works: the microphone
-   hears the caller through the speakers, so wngmn measures whether it can and, if so,
-   ignores it while the other side is talking ([TUNING.md](TUNING.md#the-microphone-endpointer)).
+1. **Choose the audio route and then leave it alone.** System Settings → Sound. The
+   built-in microphone and built-in speakers are a safe combination: nothing in that route
+   can carry your own voice back into the output stream the tap reads. Set the microphone
+   explicitly in the conferencing app too — not "Same as System" — because a virtual audio
+   device installed by some other application is a common default and may be capturing
+   nothing. On speakers the microphone hears the caller through them, so wngmn measures
+   whether it can and, if so, ignores it while the other side is talking
+   ([TUNING.md](TUNING.md#the-microphone-endpointer)).
    What you say over them is lost with the echo; wired headphones keep it. Either way, avoid
    a Bluetooth headset whose microphone will be in use.
 
-2. **Grant System Audio Recording.** System Settings → Privacy & Security → Screen & System
-   Audio Recording → enable your terminal app. If it is not listed, run wngmn once from it
-   first so macOS learns it exists.
+2. **Grant System Audio Recording, and the microphone.** System Settings → Privacy & Security
+   → Screen & System Audio Recording → enable your terminal app. If it is not listed, run
+   wngmn once from it first so macOS learns it exists. The first run also asks for the
+   Microphone, for the same app, since your own side is captured unless you pass `--no-mic`;
+   refused, that half says `mic_silent` after twenty seconds and the caller's half carries on.
 
 3. **Quit and reopen the terminal.** The grant is read at launch. A terminal window opened
    before the grant does not have it.
@@ -306,26 +308,29 @@ Work through this well before any interview, not on the day.
    By path on purpose: a bare `wngmn` resolves through `$PATH` to whatever `Scripts/install.sh`
    last installed, which is a different binary from the one step 4 just built.
 
-7. **Find the right bundle ID.** Start a call, play audio in it, and run
-   `./.build/release/wngmn devices`. Look for which process reports `output=yes`. This is the
-   only way to find out: a tap is created successfully, with a valid format, for bundle IDs of
-   apps that are not even installed, so a clean start proves nothing — and the default list is
-   candidates, not a verified inventory.
+7. **Only if you narrow the tap: find the right bundle ID.** By default the tap hears
+   everything the Mac plays and this step does not apply. With `--call-apps` or `--bundle-id`,
+   start a call, play audio in it, and run `./.build/release/wngmn devices`. Look for which
+   process reports `output=yes`. This is the only way to find out: a tap is created
+   successfully, with a valid format, for bundle IDs of apps that are not even installed, so a
+   clean start proves nothing — and the `--call-apps` list is candidates, not a verified
+   inventory.
 
-   Of the five defaults, one is measured and the rest are guesses. On a live call, Meet audio
+   Of its five entries, one is measured and the rest are guesses. On a live call, Meet audio
    came from `com.google.Chrome.helper` rather than `com.google.Chrome`; both are in the
-   default scope, which costs nothing because the tap mixes only the apps listed. The three
+   list, which costs nothing because the tap mixes only the apps listed. The three
    Zoom entries — `us.zoom.xos`, `us.zoom.CptHost`, `us.zoom.caphost` — have **not** been
    measured on a real call. Start there when you rehearse Zoom, and confirm with `devices`
    which of them reports `output=yes` before you rely on it.
 
-8. **Solo talk-test.** Start a run, speak with nothing playing, and confirm your own voice does
-   **not** appear. The tap reads the output stream and never opens the microphone, so on the
-   route from step 1 it should not. Two minutes settles it either way — and if your voice does
-   appear, there is monitor routing somewhere that would otherwise transcribe you as "the
-   question".
+8. **Solo talk-test.** Start a run with `--no-mic`, speak with nothing playing, and confirm
+   your own voice does **not** appear. The tap reads the output stream and never opens the
+   microphone, so on the route from step 1 it should not. Two minutes settles it either way —
+   and if your voice does appear, there is monitor routing somewhere that would otherwise
+   transcribe you as "the question". Then run it again without the flag and confirm that it
+   does, labelled **You**.
 
-9. **If you are using `--mic`, measure the threshold.** `wngmn miccheck` records for 15 seconds
+9. **Measure the microphone's threshold.** `wngmn miccheck` records for 15 seconds
    — talk for roughly half of it, at the volume and distance you would use on the call — and
    prints the `--mic-open-db` to pass. Guessing this value fails invisibly: partial text
    scrolls in the caption line while no sentence ever finalises, and that symptom is identical
