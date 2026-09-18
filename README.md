@@ -75,10 +75,10 @@ The one-liner. It's 142 lines of shell and you're about to pipe it into bash, so
 curl -fsSL https://raw.githubusercontent.com/F-kItShipIt/wngmn/main/Scripts/bootstrap.sh | bash
 ```
 
-The same thing, pinned to a version. `git tag` lists them, and everything past v0.3.1 is where screenshots and the no-hands answers showed up.
+The same thing, pinned to a version. `git tag` lists them. Anything older than v0.4.0 can't take screenshots, makes you ask for every answer, and only listens to Zoom and Chrome.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/F-kItShipIt/wngmn/main/Scripts/bootstrap.sh | WNGMN_REF=v0.3.1 bash
+curl -fsSL https://raw.githubusercontent.com/F-kItShipIt/wngmn/main/Scripts/bootstrap.sh | WNGMN_REF=v0.4.0 bash
 ```
 
 Uninstall, from inside `~/wngmn`.
