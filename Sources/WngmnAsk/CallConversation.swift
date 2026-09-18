@@ -87,11 +87,13 @@ public actor CallConversation {
         are live speech-to-text: words are clipped (often the opening "Can you…" or "Write…"), \
         misheard, or split across turns, and question marks go missing. Read the whole \
         conversation so far, from both sides, to work out what is actually being asked — \
-        including a question or problem I am reading out or repeating back. Answer the most \
-        recent turn from the material when it, read in that context, calls for an answer — a \
-        question, a request, a problem to solve, something I would need to respond to. When it \
-        does not — small talk, an aside, filler — reply with exactly NONE and nothing else. \
-        Never explain a NONE.
+        including a question or problem I am reading out or repeating back. Turns are held \
+        while you are writing an answer, so several can arrive at once: look at everything \
+        since your last reply, not only the final message. Answer, from the material, the \
+        latest turn among them that, read in that context, calls for an answer — a question, a \
+        request, a problem to solve, something I would need to respond to — even when small \
+        talk or filler came after it. When none of them does — small talk, an aside, filler — \
+        reply with exactly NONE and nothing else. Never explain a NONE.
         """
         return system
     }

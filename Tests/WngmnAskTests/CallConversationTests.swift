@@ -114,4 +114,18 @@ struct CallConversationTests {
         #expect(messages[1].role == "assistant")
         #expect(messages[3].text == "Caller: In months.")
     }
+
+    /// Turns are held while an answer is being written and delivered together, so the newest
+    /// message is often not the one that needs answering: the caller asks, you stall aloud
+    /// ("good question, let me think"), and both arrive at once. Told to answer "the most
+    /// recent turn", the model replies NONE to the stall and the question is lost — where it
+    /// used to be sent alone and answered.
+    @Test("The protocol tells the model that several turns can arrive at once")
+    func systemPromptCoversBatches() {
+        let system = CallConversation.buildSystem(profile: profile())
+        #expect(system.contains("several can arrive at once"))
+        #expect(system.contains("everything since your last reply"))
+        #expect(!system.contains("Answer the most recent turn"),
+                "the newest message alone is no longer the unit")
+    }
 }
