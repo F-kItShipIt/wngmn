@@ -31,7 +31,13 @@ struct Wngmn {
         }
 
         // Created before the server, which needs it to serve the control route.
-        let control = CaptureControl(micMuted: false, tapPaused: options.startPaused)
+        //
+        // Auto starts on. Looked up once, here, because the answer decides how the run starts
+        // and is announced below: with no credentials every turn would become a failed answer.
+        let startsWithAuto = options.serve && options.autoAnswer
+            && options.startsWithAuto(hasCredentials: Credentials.resolveIncludingCLI() != nil)
+        let control = CaptureControl(
+            micMuted: false, tapPaused: options.startPaused, autoAnswer: startsWithAuto)
 
         // Started before the capture graph: if the port is taken, the user should find out
         // now rather than after the interview has begun.
@@ -51,9 +57,20 @@ struct Wngmn {
             onShot: { mode in shotTrigger.withLock { $0 }?(mode) })
 
         // Real-time auto-answering. Only when a page is being served (there is somewhere to
-        // push answers) and gated at runtime by the page's `auto` toggle, off by default.
+        // push answers) and gated at runtime by the page's `auto` toggle — on from the start
+        // unless `--no-auto` was passed or there are no credentials to answer with.
         // The conversation is the shared ledger for the whole call; the profile is snapshotted
         // at start, so a mid-call edit changes manual Ask but not the auto system prompt.
+        if server != nil {
+            // Said at startup, because it is the loudest thing this program does by itself and
+            // it used to need a click: what is heard is sent, as each turn ends, with no press.
+            if startsWithAuto {
+                EventWriter.note("wngmn: auto is ON — each turn is sent to Claude as it ends and answered,")
+                EventWriter.note("wngmn:   nobody pressing Ask. Untick auto on the page, or start with --no-auto.")
+            } else if options.autoAnswer {
+                EventWriter.note("wngmn: auto is off: there are no credentials to answer with.")
+            }
+        }
         let autoAnswerer: AutoAnswerer? = server.map { srv in
             AutoAnswerer(
                 conversation: CallConversation(profile: profiles.current()),

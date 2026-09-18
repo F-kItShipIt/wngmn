@@ -413,11 +413,11 @@ summary { cursor:pointer; }
   <label class="pill toggle" title="Start answering each question as it lands, so pressing Ask is instant. Costs an API call per question.">
     <input type="checkbox" id="prefetch"> prefetch
   </label>
-  <label class="pill toggle" title="Answer each caller turn automatically as the call runs, building on every earlier answer. Off by default; sends the caller's words to Claude continuously and costs an API call per turn.">
+  <label class="pill toggle" title="Answer each turn automatically as the call runs, building on every earlier answer. On from the start unless wngmn was run with --no-auto; sends what is heard to Claude as each turn ends, and costs an API call per turn. Untick to stop.">
     <input type="checkbox" id="autoanswer"> auto
   </label>
   <button class="pill ctl" id="endbtn" type="button"
-          title="Write meeting notes from the whole call so far. Auto must have run to build them.">▸ notes</button>
+          title="Write meeting notes from the whole call so far: what auto answered, and any screenshots.">▸ notes</button>
   <button class="pill ctl" id="panel" type="button"
           title="Hide the latency and warnings panel (\\) so the transcript gets the full width.">▸ panel</button>
   <span class="pill" id="clock">00:00</span>

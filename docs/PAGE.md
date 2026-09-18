@@ -249,7 +249,9 @@ It is not a property of your browser, and this is where it differs from the two 
 above. **sync** and **prefetch** are per-page and start off on every reload; auto is posted
 to `/control` and held on the server next to the mic and tap state, so ticking it on the
 phone ticks it on the laptop, and both are told so in the same `control` line. It still
-starts off on every run — nothing is sent until you ask for it.
+starts **on** with every run, unless wngmn was started with `--no-auto` or found no
+credentials to answer with — so what is heard is sent as each turn ends, from the first turn,
+and wngmn says so at startup. Unticking it stops that at once, held turns included.
 
 **A turn, not a line.** Answering each endpoint separately would answer half-questions, so
 the batcher holds one speaker's lines open until the turn ends — the other speaker starts, or

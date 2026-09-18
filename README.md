@@ -279,7 +279,7 @@ The complete list of things that leave your Mac:
 - Audio: never. Not to transcribe, not to find the end of a question.
 - Ask: the question, the recent ones, your profile. Off to api.anthropic.com when you click.
 - **prefetch**, if you switch it on: every caller question goes the moment it lands, no click. Their words, not just yours.
-- **auto**, if you switch it on: every caller turn goes as it ends, no click, and each answer builds on the ones before it in a running conversation with Claude. Off by default; the loudest change to this list, so it is the one you turn on deliberately.
+- **auto**, which is **on unless you start with `--no-auto`**: every turn goes as it ends, no click — theirs, and yours if `--mic` is on — and each answer builds on the ones before it in a running conversation with Claude. The loudest line on this list, which is why wngmn says so when it starts. Untick **auto** on the page to stop it mid-call. With no API key it starts off.
 - **shot**, when you press the key you bound to it: a picture of your screen — the whole display, or the region you drag — goes to api.anthropic.com with the conversation so far, and stays in that conversation until wngmn exits, so with **auto** on it goes again with every later turn. Only from this Mac: the route that takes the picture refuses the network even under `--listen`, and refuses browsers outright. It does answer anything *else* running as you, which is what your key is — and what any other local process could be; [SECURITY.md](SECURITY.md) says what that means. wngmn keeps the image in memory. The file is deleted as soon as it has been read, and the session log records that a shot was taken and how big, never the picture — though the *answer* is logged like any other, and an answer about a screenshot can quote it. Whatever else was on the screen goes too; drag a region if that matters.
 - `install-model`: a download from Apple.
 - Transcript: your local disk, and only while `--serve` is up. `--no-log` turns it off.
@@ -301,7 +301,7 @@ wngmn is intentionally boring in a few places. There is no framework where a few
 
 If you find a bug, open an issue. If you know why the audio pipeline behaves differently on a machine it has absolutely no reason to behave differently on, definitely open an issue. Pull requests are welcome. Keep changes focused, keep dependencies justified, and try not to turn the tiny HTTP server into Kubernetes.
 
-`swift test` runs 541 tests; five suites want the speech model first. Start with [CONTRIBUTING.md](CONTRIBUTING.md), then work through [permissions](docs/PERMISSIONS.md), [the page](docs/PAGE.md), [tuning](docs/TUNING.md), [architecture](docs/ARCHITECTURE.md) and [the GIFs](docs/tapes/README.md). [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) is in force. Found a security hole? GitHub private vulnerability reporting, details in [SECURITY.md](SECURITY.md).
+`swift test` runs 546 tests; five suites want the speech model first. Start with [CONTRIBUTING.md](CONTRIBUTING.md), then work through [permissions](docs/PERMISSIONS.md), [the page](docs/PAGE.md), [tuning](docs/TUNING.md), [architecture](docs/ARCHITECTURE.md) and [the GIFs](docs/tapes/README.md). [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) is in force. Found a security hole? GitHub private vulnerability reporting, details in [SECURITY.md](SECURITY.md).
 
 ## The name
 
