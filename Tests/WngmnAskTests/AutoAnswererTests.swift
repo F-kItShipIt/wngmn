@@ -18,6 +18,7 @@ struct AutoAnswererTests {
             var maxConcurrent = 0
             var requests: [[String]] = []
             var cancelledCalls = 0
+            var pictures: [Int] = []
         }
         let state = Mutex(State())
 
@@ -37,6 +38,8 @@ struct AutoAnswererTests {
         /// test that only looked at what came out afterwards passed with both `task.cancel()`
         /// calls deleted, since the reply of a request marked cancelled is discarded either way.
         var cancelledCalls: Int { state.withLock { $0.cancelledCalls } }
+        /// How many pictures each request carried, in the order the requests began.
+        var pictures: [Int] { state.withLock { $0.pictures } }
     }
 
     /// Holds every request at the door until it is opened, so a test can do things while a
@@ -79,6 +82,7 @@ struct AutoAnswererTests {
                     s.concurrent += 1
                     s.maxConcurrent = max(s.maxConcurrent, s.concurrent)
                     s.requests.append(messages.map(\.text))
+                    s.pictures.append(messages.filter(CallConversation.hasPicture).count)
                     return s.reply
                 }
                 await withTaskCancellationHandler {
@@ -441,5 +445,157 @@ struct AutoAnswererTests {
         #expect(!h.seen.contains { $0.contains("answer_failed") })
         #expect(h.requests.last?.last == "Caller: The pasted problem.")
         #expect(h.seen.last { $0.contains("answer_done") }?.contains("\"key\":\"caller@5\"") == true)
+    }
+
+    // MARK: - Screenshots
+
+    func shot(_ t: Double) -> Shot {
+        Shot(base64: "iVBORw0KGgo=", t: t, mode: .region, width: 1500, height: 900, byteCount: 412_380)
+    }
+
+    /// Pressing the key is the Ask. The toggle is for what is overheard; this was deliberate.
+    @Test("A screenshot is answered with auto off")
+    func shotIsAnsweredWithAutoOff() async {
+        let h = Harness(); h.setEnabled(false); h.setReply("It is a two-pointer merge.")
+        let a = make(h)
+        await a.shot(shot(83.412))
+        await a.idle()
+
+        #expect(h.respondCalls == 1)
+        #expect(h.pictures == [1])
+        let done = h.seen.first { $0.contains("answer_done") }
+        #expect(done?.contains("\"key\":\"screen@83.412\"") == true)
+        #expect(done?.contains("two-pointer merge") == true)
+    }
+
+    /// The `shot` frame is the only sign the keypress worked — the shutter is silenced — so it
+    /// goes out at once, ahead of the request. It says that a picture was taken and how big;
+    /// it never carries the picture, because this frame is what the session log keeps.
+    @Test("A screenshot is announced to the page before it is answered, without the picture")
+    func shotIsAnnounced() async {
+        let h = Harness()
+        let gate = Gate()
+        let a = make(h, gate: gate)
+        await a.shot(shot(83.412))
+
+        let frame = h.seen.first { $0.contains("\"type\":\"shot\"") }
+        #expect(frame == #"{"type":"shot","key":"screen@83.412","t":83.412,"mode":"region","w":1500,"h":900,"bytes":412380}"#)
+        #expect(!h.seen.contains { $0.contains("iVBORw0KGgo=") }, "the picture reached a frame")
+        #expect(!h.seen.contains { $0.contains("answer_done") }, "announced before it is answered")
+
+        gate.open()
+        await a.idle()
+    }
+
+    @Test("A screenshot cancels the answer in flight, and goes out with that turn as context")
+    func shotCutsIn() async {
+        let h = Harness()
+        let gate = Gate()
+        let a = make(h, gate: gate)
+
+        await a.submit(turn("Let me paste this here.", 1))
+        await wait(until: { h.respondCalls == 1 })
+        await a.shot(shot(5))
+        #expect(h.cancelledCalls == 1, "the request in flight was not cancelled")
+        gate.open()
+        await a.idle()
+
+        #expect(h.maxConcurrent == 1)
+        #expect(h.requests.last == [
+            "Caller: Let me paste this here.", "Screen: a screenshot I just took of my screen.",
+        ])
+        #expect(h.pictures.last == 1)
+        let done = h.seen.filter { $0.contains("answer_done") }
+        #expect(done.count == 1)
+        #expect(done.first?.contains("\"key\":\"screen@5\"") == true)
+    }
+
+    /// Auto was switched off with speech still held behind a request. The screenshot is sent —
+    /// it was deliberate — and must not carry the held speech out with it.
+    @Test("With auto off, a screenshot does not take held speech out with it")
+    func shotDoesNotDragSpeechOut() async {
+        let h = Harness()
+        let gate = Gate()
+        let a = make(h, gate: gate)
+
+        await a.submit(turn("Asked with auto on.", 1))
+        await wait(until: { h.respondCalls == 1 })
+        await a.submit(turn("Held, and auto goes off before it is sent.", 3))
+        h.setEnabled(false)
+        await a.shot(shot(5))
+        gate.open()
+        await a.idle()
+
+        #expect(h.requests.last == [
+            "Caller: Asked with auto on.", "Screen: a screenshot I just took of my screen.",
+        ], "the held turn must not leave once auto is off")
+    }
+
+    /// A picture the API rejects would be sent, and rejected, on every later turn.
+    @Test("A screenshot the API rejects is taken back out of the conversation")
+    func rejectedShotIsRemoved() async {
+        let h = Harness()
+        let calls = Mutex(0)
+        let a = AutoAnswerer(
+            conversation: CallConversation(profile: Profile(text: "## Style\ns\n\n## Context\nc")),
+            isEnabled: { true },
+            respond: { _, messages, onText in
+                let n = calls.withLock { c -> Int in c += 1; return c }
+                h.state.withLock { $0.requests.append(messages.map(\.text)) }
+                if n == 1 { throw ClaudeClient.Failure.http(status: 400, detail: "image exceeds the limit") }
+                onText("An answer.")
+            },
+            broadcast: { h.record($0) },
+            broadcastLive: { h.record($0) }
+        )
+        await a.shot(shot(5))
+        await a.idle()
+        await a.submit(turn("Did that come through?", 9))
+        await a.idle()
+
+        #expect(h.seen.contains { $0.contains("answer_failed") && $0.contains("screen@5") })
+        #expect(h.requests.last == ["Caller: Did that come through?"], "the rejected picture is still in the conversation")
+    }
+
+    /// A dropped connection says nothing about the picture. It stays, and the next request
+    /// carries it.
+    @Test("A screenshot that fails on the network stays in the conversation")
+    func networkFailureKeepsTheShot() async {
+        let h = Harness()
+        let calls = Mutex(0)
+        let a = AutoAnswerer(
+            conversation: CallConversation(profile: Profile(text: "## Style\ns\n\n## Context\nc")),
+            isEnabled: { true },
+            respond: { _, messages, onText in
+                let n = calls.withLock { c -> Int in c += 1; return c }
+                h.state.withLock { $0.requests.append(messages.map(\.text)) }
+                if n == 1 { throw URLError(.networkConnectionLost) }
+                onText("An answer.")
+            },
+            broadcast: { h.record($0) },
+            broadcastLive: { h.record($0) }
+        )
+        await a.shot(shot(5))
+        await a.idle()
+        await a.submit(turn("Can you see it now?", 9))
+        await a.idle()
+
+        #expect(h.requests.last == [
+            "Screen: a screenshot I just took of my screen.", "Caller: Can you see it now?",
+        ])
+    }
+
+    /// NONE means "nothing to show", which is right for small talk and wrong here: the page is
+    /// showing "Asking…" because a key was pressed, and nothing would ever replace it.
+    @Test("A model that declines a screenshot is reported, not left hanging")
+    func noneOnAShotIsReported() async {
+        let h = Harness(); h.setReply("NONE")
+        let a = make(h)
+        await a.shot(shot(5))
+        await a.idle()
+
+        let failed = h.seen.first { $0.contains("answer_failed") }
+        #expect(failed?.contains("screen@5") == true)
+        #expect(!h.seen.contains { $0.contains("answer_done") })
     }
 }

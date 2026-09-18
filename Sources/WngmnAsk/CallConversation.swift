@@ -1,6 +1,12 @@
 import Foundation
 import WngmnCore
 
+/// Something that goes into the conversation: what was said, or what was shown.
+public enum ConversationItem: Sendable, Equatable {
+    case turn(TurnBatcher.Turn)
+    case shot(Shot)
+}
+
 /// The shared context ledger for one call, as a Messages-API conversation.
 ///
 /// Every answered turn becomes a message and every answer Claude's reply, so a later answer
@@ -13,7 +19,20 @@ import WngmnCore
 /// without spending money or standing up an actor.
 public actor CallConversation {
     private let system: String
-    private var messages: [ClaudeClient.Message] = []
+    /// A message, and the key of the screenshot it carries if it carries one — which is how a
+    /// rejected picture is found again to be taken out.
+    private struct Entry {
+        var message: ClaudeClient.Message
+        var shotKey: String?
+    }
+    private var entries: [Entry] = []
+    private var messages: [ClaudeClient.Message] { entries.map(\.message) }
+
+    /// Past 20 images in one request the API holds every image in it to 2000 px on both sides,
+    /// and images resent from earlier turns count towards the 20. A shot is kept at up to
+    /// 2576 px, so a 21st would fail its own request and — because it stays in the conversation
+    /// — every request after it.
+    static let maximumPictures = 20
 
     public init(profile: Profile) {
         system = Self.buildSystem(profile: profile)
@@ -36,10 +55,44 @@ public actor CallConversation {
     /// own message — consecutive user messages are already what a `NONE` leaves behind, and
     /// keeping them separate keeps each one's speaker label.
     public func startBatch(_ turns: [TurnBatcher.Turn]) -> (system: String, messages: [ClaudeClient.Message]) {
-        for turn in turns {
-            messages.append(ClaudeClient.Message(role: "user", text: Self.userMessage(for: turn)))
+        startBatch(turns.map(ConversationItem.turn))
+    }
+
+    /// The same, for a batch that may hold a screenshot among the speech.
+    public func startBatch(_ items: [ConversationItem]) -> (system: String, messages: [ClaudeClient.Message]) {
+        for item in items {
+            switch item {
+            case let .turn(turn):
+                entries.append(Entry(
+                    message: ClaudeClient.Message(role: "user", text: Self.userMessage(for: turn)),
+                    shotKey: nil))
+            case let .shot(shot):
+                makeRoomForAPicture()
+                entries.append(Entry(message: Self.message(for: shot), shotKey: shot.key))
+            }
         }
         return (system, messages)
+    }
+
+    /// Takes screenshots back out. Speech is committed before it is sent and never rolled back,
+    /// deliberately — the other person did say it. A picture differs: one the API rejects would
+    /// be sent again, and rejected again, on every later turn for the rest of the call.
+    public func removeShots(keys: [String]) {
+        entries.removeAll { entry in entry.shotKey.map(keys.contains) ?? false }
+    }
+
+    /// The oldest picture gives up its image and keeps its place: the label says so, and the
+    /// answer that was given about it is still the next message, so a later "the first one you
+    /// showed me" still has something to refer to.
+    private func makeRoomForAPicture() {
+        let pictures = entries.indices.filter { Self.hasPicture(entries[$0].message) }
+        guard pictures.count >= Self.maximumPictures, let oldest = pictures.first else { return }
+        entries[oldest].message = ClaudeClient.Message(
+            role: "user", text: "Screen: an earlier screenshot, no longer attached.")
+    }
+
+    static func hasPicture(_ message: ClaudeClient.Message) -> Bool {
+        message.blocks.contains { if case .image = $0 { true } else { false } }
     }
 
     /// Commits an answer to the ledger. A `NONE` reply leaves only the turn behind, as
@@ -48,7 +101,8 @@ public actor CallConversation {
         guard !Self.isNone(answer) else { return }
         let trimmed = answer.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        messages.append(ClaudeClient.Message(role: "assistant", text: trimmed))
+        entries.append(Entry(
+            message: ClaudeClient.Message(role: "assistant", text: trimmed), shotKey: nil))
     }
 
     /// The request for end-of-call notes: the whole conversation plus one summary turn.
@@ -57,7 +111,7 @@ public actor CallConversation {
         (system, messages + [ClaudeClient.Message(role: "user", text: Self.summaryInstruction)])
     }
 
-    public var isEmpty: Bool { messages.isEmpty }
+    public var isEmpty: Bool { entries.isEmpty }
 
     // MARK: - Pure message building
 
@@ -93,7 +147,11 @@ public actor CallConversation {
         latest turn among them that, read in that context, calls for an answer — a question, a \
         request, a problem to solve, something I would need to respond to — even when small \
         talk or filler came after it. When none of them does — small talk, an aside, filler — \
-        reply with exactly NONE and nothing else. Never explain a NONE.
+        reply with exactly NONE and nothing else. Never explain a NONE. A message may instead be \
+        labelled Screen: that is a picture I just took of my own screen, usually something the \
+        other side has put in front of me — a problem, a document, a diagram. Treat what it \
+        shows as part of the conversation. Taking it is me asking you about it now, so work out \
+        what it calls for and answer that, and never reply NONE to a Screen message.
         """
         return system
     }
@@ -102,6 +160,15 @@ public actor CallConversation {
     static func userMessage(for turn: TurnBatcher.Turn) -> String {
         let who = turn.speaker == .caller ? "Caller" : "You"
         return "\(who): \(turn.text)"
+    }
+
+    /// The picture, then the words that refer to it — the order the vision documentation
+    /// recommends. The encoder keeps whatever order it is given, so this is where it is decided.
+    static func message(for shot: Shot) -> ClaudeClient.Message {
+        ClaudeClient.Message(role: "user", blocks: [
+            .image(mediaType: "image/png", base64: shot.base64),
+            .text("Screen: a screenshot I just took of my screen."),
+        ])
     }
 
     static let summaryInstruction = """

@@ -128,4 +128,82 @@ struct CallConversationTests {
         #expect(!system.contains("Answer the most recent turn"),
                 "the newest message alone is no longer the unit")
     }
+
+    func shot(_ t: Double, base64: String = "iVBORw0KGgo=") -> Shot {
+        Shot(base64: base64, t: t, mode: .region, width: 1500, height: 900, byteCount: 9)
+    }
+
+    /// The picture first, then the words that refer to it, which is the order the vision
+    /// documentation recommends. The encoder keeps whatever order it is given, so this is the
+    /// one place that order is decided.
+    @Test("A screenshot is one user message: the picture, then its label")
+    func shotMessageShape() async {
+        let convo = CallConversation(profile: profile())
+        let (_, messages) = await convo.startBatch([.shot(shot(83.412))])
+        #expect(messages.count == 1)
+        #expect(messages[0].role == "user")
+        #expect(messages[0].blocks == [
+            .image(mediaType: "image/png", base64: "iVBORw0KGgo="),
+            .text("Screen: a screenshot I just took of my screen."),
+        ])
+    }
+
+    @Test("Speech and a screenshot in one batch keep their arrival order")
+    func mixedBatchKeepsOrder() async {
+        let convo = CallConversation(profile: profile())
+        let (_, messages) = await convo.startBatch([
+            .turn(turn("Let me paste this here.")), .shot(shot(10)), .turn(turn("Take your time.")),
+        ])
+        #expect(messages.map(\.text) == [
+            "Caller: Let me paste this here.",
+            "Screen: a screenshot I just took of my screen.",
+            "Caller: Take your time.",
+        ])
+    }
+
+    /// Pressing the key is asking. A model that replies NONE to a screenshot leaves the page
+    /// saying "Asking…" over nothing, after a deliberate act.
+    @Test("The protocol names Screen, and says a screenshot is never answered NONE")
+    func systemPromptCoversScreenshots() {
+        let system = CallConversation.buildSystem(profile: profile())
+        #expect(system.contains("labelled Screen"))
+        #expect(system.contains("never reply NONE to a Screen message"))
+    }
+
+    /// Speech is committed before it is sent and never taken back — the other person did say
+    /// it. A picture differs: one the API rejects would be sent again, and rejected again, on
+    /// every later turn for the rest of the call.
+    @Test("A rejected screenshot is taken out, and the rest of the conversation stays")
+    func removesARejectedShot() async {
+        let convo = CallConversation(profile: profile())
+        _ = await convo.startBatch([.turn(turn("Let me paste this here.")), .shot(shot(10))])
+        await convo.removeShots(keys: [shot(10).key])
+        let (_, messages) = await convo.startTurn(turn("Can you see it?"))
+        #expect(messages.map(\.text) == ["Caller: Let me paste this here.", "Caller: Can you see it?"])
+    }
+
+    @Test("Removing a screenshot that is not there changes nothing")
+    func removingAnUnknownShotIsHarmless() async {
+        let convo = CallConversation(profile: profile())
+        _ = await convo.startBatch([.shot(shot(10))])
+        await convo.removeShots(keys: ["screen@999"])
+        let (_, messages) = await convo.startTurn(turn("Still there?"))
+        #expect(messages.count == 2)
+    }
+
+    /// Past 20 images in one request the API holds every image in it to 2000 px on both sides,
+    /// and images from earlier turns count. A shot is kept at up to 2576 px, so a 21st would
+    /// fail its own request — and, staying in the conversation, every request after it.
+    @Test("The conversation keeps twenty pictures; the oldest loses its picture, not its place")
+    func capsThePictures() async {
+        let convo = CallConversation(profile: profile())
+        for i in 1...20 { _ = await convo.startBatch([.shot(shot(Double(i)))]) }
+        let (_, messages) = await convo.startBatch([.shot(shot(21))])
+
+        let withPicture = messages.filter { $0.blocks.contains { if case .image = $0 { true } else { false } } }
+        #expect(withPicture.count == 20)
+        #expect(messages.count == 21, "the oldest keeps its place in the conversation")
+        #expect(messages[0].blocks == [.text("Screen: an earlier screenshot, no longer attached.")])
+        #expect(messages[20].blocks.count == 2, "the newest has its picture")
+    }
 }

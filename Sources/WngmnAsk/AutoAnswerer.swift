@@ -38,7 +38,7 @@ public actor AutoAnswerer {
     ) async throws -> Void
 
     private var batcher: TurnBatcher
-    private var queue = AnswerQueue<TurnBatcher.Turn>()
+    private var queue = AnswerQueue<ConversationItem>()
     private let conversation: CallConversation
     private let isEnabled: @Sendable () -> Bool
     private let respond: Respond
@@ -110,7 +110,18 @@ public actor AutoAnswerer {
     /// is sent.
     func submit(_ turn: TurnBatcher.Turn, preempts: Bool = false) {
         guard isEnabled() else { return }
-        handle(queue.enqueue(turn, preempts: preempts))
+        handle(queue.enqueue(.turn(turn), preempts: preempts))
+    }
+
+    /// A picture of the screen, taken on purpose. It is announced to the page at once — the
+    /// shutter is silenced, so that row is the only sign the keypress did anything — and it
+    /// cuts in on whatever answer is out, which is usually an answer to "let me paste this".
+    ///
+    /// The auto toggle is not consulted. The toggle governs what is overheard; pressing a key
+    /// is asking, the same as pressing Ask.
+    public func shot(_ shot: Shot) {
+        broadcast(Self.shotFrame(shot))
+        handle(queue.enqueue(.shot(shot), preempts: true))
     }
 
     /// Suspends until nothing is in flight and nothing waits. A loop, because a drain that ends
@@ -119,7 +130,7 @@ public actor AutoAnswerer {
         while let task = drain { await task.value }
     }
 
-    private func handle(_ command: AnswerQueue<TurnBatcher.Turn>.Command) {
+    private func handle(_ command: AnswerQueue<ConversationItem>.Command) {
         switch command {
         case .none:
             return
@@ -133,15 +144,19 @@ public actor AutoAnswerer {
         }
     }
 
-    private func run(id firstID: Int, batch firstBatch: [TurnBatcher.Turn]) async {
-        var next: (id: Int, batch: [TurnBatcher.Turn])? = (firstID, firstBatch)
+    private func run(id firstID: Int, batch firstBatch: [ConversationItem]) async {
+        var next: (id: Int, batch: [ConversationItem])? = (firstID, firstBatch)
         while let (id, batch) = next {
             // Read again before every send, and not only when the turn closed. Unticking auto
             // because the call has turned confidential means "send nothing more", and a batch
             // held behind a slow request would otherwise leave when that request settled — up
             // to the 90 s request timeout after the toggle went off. What is skipped is not
             // recorded either, like any turn that closes while auto is off.
-            if isEnabled() { await perform(id: id, batch: batch) }
+            //
+            // A screenshot is exempt, here as in `shot`: it was asked for. With auto off it
+            // goes alone — it must not carry held speech out with it.
+            let sendable = isEnabled() ? batch : batch.filter { if case .shot = $0 { true } else { false } }
+            if !sendable.isEmpty { await perform(id: id, batch: sendable) }
             // Whatever became of it, this id is finished with. A cancel that lands while the
             // reply is being committed arrives too late to matter, and would otherwise sit in
             // the set for the rest of the call.
@@ -157,9 +172,14 @@ public actor AutoAnswerer {
 
     /// One request for one batch. The answer belongs to the batch's last turn: the earlier
     /// ones are what was said on the way to it, and are context.
-    private func perform(id: Int, batch: [TurnBatcher.Turn]) async {
+    private func perform(id: Int, batch: [ConversationItem]) async {
         guard let last = batch.last else { return }
         let key = Self.key(for: last)
+        let shotKeys = batch.compactMap { item -> String? in
+            if case let .shot(shot) = item { return shot.key }
+            return nil
+        }
+        let answersAShot = if case .shot = last { true } else { false }
         let (system, messages) = await conversation.startBatch(batch)
         // A cancel can land while the ledger was being awaited, before any request exists. The
         // turns are committed — they were said — but there is nothing to send, and launching a
@@ -186,12 +206,26 @@ public actor AutoAnswerer {
             if CallConversation.isNone(full) {
                 // Nothing worth answering; the turn stays in the ledger as context and the
                 // page shows nothing. The call still counted — it is spend the user can see.
+                //
+                // Except over a screenshot, where "shows nothing" is wrong: the page has been
+                // saying "Asking…" since the key was pressed, and nothing would ever replace it.
+                if answersAShot {
+                    broadcast(Self.answerFailedFrame(
+                        key: key, detail: "the model had nothing to say about this screenshot"))
+                }
                 return
             }
             stats.answers += 1
             broadcastLive(Self.statsFrame(stats))
             broadcast(Self.answerDoneFrame(key: key, text: full.trimmingCharacters(in: .whitespacesAndNewlines)))
         case let .failure(error):
+            // A picture the API will not take — too large, not an image it reads — would be
+            // sent again with every later turn and fail every one of them. Anything else (a
+            // dropped connection, a 529) says nothing about the picture, so it stays and the
+            // next request carries it.
+            if case let ClaudeClient.Failure.http(status, _) = error, status == 400 || status == 413 {
+                await conversation.removeShots(keys: shotKeys)
+            }
             broadcast(Self.answerFailedFrame(key: key, detail: "\(error)"))
         }
     }
@@ -246,6 +280,24 @@ public actor AutoAnswerer {
     /// is why the page could report an answer and show an empty panel.
     static func key(for turn: TurnBatcher.Turn) -> String {
         "\(turn.speaker.rawValue)@\(EventEncoder.number(turn.t0))"
+    }
+
+    static func key(for item: ConversationItem) -> String {
+        switch item {
+        case let .turn(turn): key(for: turn)
+        case let .shot(shot): shot.key
+        }
+    }
+
+    /// Tells the page a screenshot was taken: when, how, and how big. Never the picture — this
+    /// frame is backlogged and written to the session log, and the log is kept indefinitely.
+    ///
+    /// Built by hand rather than through `JSONSerialization`, which spells 83.412 as
+    /// 83.412000000000006. `t` and the key have to agree to the digit.
+    static func shotFrame(_ shot: Shot) -> String {
+        #"{"type":"shot","key":\#(EventEncoder.quote(shot.key)),"t":\#(EventEncoder.number(shot.t)),"#
+            + #""mode":\#(EventEncoder.quote(shot.mode.rawValue)),"w":\#(shot.width),"h":\#(shot.height),"#
+            + #""bytes":\#(shot.byteCount)}"#
     }
 
     static func answerDoneFrame(key: String, text: String) -> String {
