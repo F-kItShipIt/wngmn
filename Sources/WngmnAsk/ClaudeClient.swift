@@ -28,12 +28,42 @@ public struct ClaudeClient: Sendable {
     }
 
     /// One message in a conversation. `role` is "user" or "assistant".
+    /// One message of a conversation: a role, and an ordered list of blocks.
+    ///
+    /// It was a role and a string until a message had to be able to carry a picture. The
+    /// string initialiser and `text` are kept, so every call site and test that thinks of a
+    /// message as words still reads as it did.
     public struct Message: Sendable, Equatable {
+        public enum Block: Sendable, Equatable {
+            case text(String)
+            /// `base64` is the encoded bytes, as the API takes them. `mediaType` has to be one
+            /// of the four it accepts — image/jpeg, image/png, image/gif, image/webp — which is
+            /// the capturing side's business: this type carries a picture, it never reads one.
+            case image(mediaType: String, base64: String)
+        }
+
         public let role: String
-        public let text: String
-        public init(role: String, text: String) {
+        /// In wire order. The vision documentation recommends a picture before the words that
+        /// refer to it; that is for whoever builds the message, not for the encoder to enforce
+        /// by quietly reordering a list the caller was told is ordered.
+        public let blocks: [Block]
+
+        public init(role: String, blocks: [Block]) {
             self.role = role
-            self.text = text
+            self.blocks = blocks
+        }
+
+        public init(role: String, text: String) {
+            self.init(role: role, blocks: [.text(text)])
+        }
+
+        /// The words, without the pictures. This is what the ledger's tests, the notes and a
+        /// log line read, and a megabyte of base64 in the middle of it would help none of them.
+        public var text: String {
+            blocks.compactMap { block -> String? in
+                if case let .text(text) = block { return text }
+                return nil
+            }.joined(separator: "\n")
         }
     }
 
@@ -82,13 +112,16 @@ public struct ClaudeClient: Sendable {
     /// carries no message breakpoint — there is no prefix worth caching yet, and it keeps the
     /// one-shot ask byte-identical to what it always sent.
     func requestBody(system: String, messages: [Message]) -> [String: Any] {
-        var wire: [[String: Any]] = messages.map { ["role": $0.role, "content": $0.text] }
+        var wire: [[String: Any]] = messages.map { ["role": $0.role, "content": Self.content(of: $0)] }
         if messages.count > 1, let last = wire.indices.last {
-            wire[last]["content"] = [[
-                "type": "text",
-                "text": messages[last].text,
-                "cache_control": ["type": "ephemeral"],
-            ]]
+            // On the last block of the message as it is, not on a message rebuilt from its
+            // text. A picture is the newest message on exactly the request meant to answer it,
+            // so rebuilding from `text` would drop it there and nowhere else — with a 200.
+            var blocks = Self.blocks(of: messages[last])
+            if let end = blocks.indices.last {
+                blocks[end]["cache_control"] = ["type": "ephemeral"]
+            }
+            wire[last]["content"] = blocks
         }
         var body: [String: Any] = [
             "model": configuration.model,
@@ -114,6 +147,28 @@ public struct ClaudeClient: Sendable {
             body["system"] = system
         }
         return body
+    }
+
+    /// A message that is only words goes as a bare string, which is what every request made
+    /// before a message could carry a picture looked like — so a conversation without one is
+    /// byte-identical to what it always was, and its cached prefix is not disturbed.
+    static func content(of message: Message) -> Any {
+        if message.blocks.count == 1, case let .text(text) = message.blocks[0] { return text }
+        return blocks(of: message)
+    }
+
+    static func blocks(of message: Message) -> [[String: Any]] {
+        message.blocks.map { block -> [String: Any] in
+            switch block {
+            case let .text(text):
+                return ["type": "text", "text": text]
+            case let .image(mediaType, base64):
+                return [
+                    "type": "image",
+                    "source": ["type": "base64", "media_type": mediaType, "data": base64],
+                ]
+            }
+        }
     }
 
     /// Streams an answer to a single question, calling `onText` with each fragment.
