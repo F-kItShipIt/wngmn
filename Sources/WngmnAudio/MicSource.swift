@@ -389,20 +389,23 @@ public actor MicSource {
         }
     }
 
-    /// A boundary of your own speech that produced no usable text.
+    /// A boundary of your own speech that produced no question.
     ///
-    /// Reported, under its own code so it can be filtered separately from the caller's.
-    /// These were suppressed at first on the theory that your own side is full of
-    /// half-words not worth a warning each — which was wrong in the way that matters: it
-    /// also hid whole sentences that were heard, recognised, and then lost, leaving no
-    /// trace anywhere that they had ever existed.
+    /// Two very different cases, split by whether a transcript arrived at all. A boundary
+    /// whose text was heard and then lost (`hadTranscript`) is a genuine miss and warns,
+    /// under its own code so it filters separately from the caller's. A boundary the
+    /// recogniser found no words in is not: on your own mic that is typing, a breath, a
+    /// cough — the gate opening on non-speech, several times a minute — so it is not
+    /// reported. Suppressing it used to hide whole lost sentences too, but those now fall
+    /// back to their volatile in the assembler and are emitted rather than dropped, so the
+    /// only thing left to suppress is the noise.
     private func reportDropped() {
-        for endpoint in assembler.takeDropped() {
+        for drop in assembler.takeDropped() where drop.hadTranscript {
             writer.emit(.warning(
                 code: "mic_question_lost",
                 detail: String(
                     format: "your speech at t0=%.2f t1=%.2f produced no usable text",
-                    endpoint.speechStart, endpoint.speechEnd
+                    drop.endpoint.speechStart, drop.endpoint.speechEnd
                 )
             ))
         }

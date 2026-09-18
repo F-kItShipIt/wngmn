@@ -245,12 +245,12 @@ actor QuestionCollector {
     }
 
     private func reportDropped() {
-        for endpoint in assembler.takeDropped() {
+        for drop in assembler.takeDropped() {
             writer.emit(.warning(
                 code: "question_lost",
                 detail: String(
                     format: "boundary at t0=%.2f t1=%.2f produced no usable text",
-                    endpoint.speechStart, endpoint.speechEnd
+                    drop.endpoint.speechStart, drop.endpoint.speechEnd
                 )
             ))
         }
