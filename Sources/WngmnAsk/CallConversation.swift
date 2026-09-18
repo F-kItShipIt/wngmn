@@ -25,7 +25,20 @@ public actor CallConversation {
     /// next turn even if this answer fails or is `NONE` — the other person did say it. The
     /// answer is committed separately once it arrives.
     public func startTurn(_ turn: TurnBatcher.Turn) -> (system: String, messages: [ClaudeClient.Message]) {
-        messages.append(ClaudeClient.Message(role: "user", text: Self.userMessage(for: turn)))
+        startBatch([turn])
+    }
+
+    /// Opens several turns as one request: everything that waited while the last answer was
+    /// streaming, delivered together.
+    ///
+    /// One call, so one actor hop. Appending turn by turn across awaits would let something
+    /// else land between two turns of what goes out as a single request. Each turn stays its
+    /// own message — consecutive user messages are already what a `NONE` leaves behind, and
+    /// keeping them separate keeps each one's speaker label.
+    public func startBatch(_ turns: [TurnBatcher.Turn]) -> (system: String, messages: [ClaudeClient.Message]) {
+        for turn in turns {
+            messages.append(ClaudeClient.Message(role: "user", text: Self.userMessage(for: turn)))
+        }
         return (system, messages)
     }
 

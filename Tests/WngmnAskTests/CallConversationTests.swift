@@ -85,4 +85,33 @@ struct CallConversationTests {
         #expect(!CallConversation.isNone("There is none left."))
         #expect(!CallConversation.isNone("The answer is 400k."))
     }
+
+    /// The batch is committed in one actor hop. Appending turn by turn across awaits would let
+    /// another caller's message land between two turns of what is sent as a single request.
+    @Test("A batch is committed as separate labelled messages, in order, in one request")
+    func batchCommitsInOrder() async {
+        let convo = CallConversation(profile: profile())
+        let (_, messages) = await convo.startBatch([
+            turn("What is your burn rate?"),
+            turn("About four hundred thousand.", speaker: .you),
+            turn("And your runway?"),
+        ])
+        #expect(messages.map(\.text) == [
+            "Caller: What is your burn rate?",
+            "You: About four hundred thousand.",
+            "Caller: And your runway?",
+        ])
+        #expect(messages.allSatisfy { $0.role == "user" })
+    }
+
+    @Test("A batch lands after what the conversation already holds")
+    func batchAppendsToTheLedger() async {
+        let convo = CallConversation(profile: profile())
+        _ = await convo.startTurn(turn("What is your burn rate?"))
+        await convo.finishTurn(answer: "About 400k a month.")
+        let (_, messages) = await convo.startBatch([turn("And your runway?"), turn("In months.")])
+        #expect(messages.count == 4)
+        #expect(messages[1].role == "assistant")
+        #expect(messages[3].text == "Caller: In months.")
+    }
 }
