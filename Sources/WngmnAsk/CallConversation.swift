@@ -34,6 +34,20 @@ public actor CallConversation {
     /// — every request after it.
     static let maximumPictures = 20
 
+    /// The limit that is reached first. A request may be 32 MB, every picture kept is sent
+    /// again with every turn, and one picture may be 10 MB encoded, so four big ones cross it
+    /// with the count nowhere near twenty. Past it the API answers 413; the newest shot is then
+    /// removed as rejected, and so is every shot after it, for the rest of the call. 24 MB
+    /// leaves room for the text, the system prompt, and the ~1.6 % `JSONSerialization` adds to
+    /// base64 by escaping every `/`.
+    static let pictureByteBudget = 24_000_000
+
+    /// How many of the oldest pictures go when the count is reached. Each eviction rewrites a
+    /// message near the start of the conversation, and prompt caching is a prefix match, so it
+    /// discards the cached prefix. One at a time would do that on every shot past the
+    /// twentieth; five at a time does it on every fifth.
+    static let evictionBlock = 5
+
     public init(profile: Profile) {
         system = Self.buildSystem(profile: profile)
     }
@@ -67,7 +81,7 @@ public actor CallConversation {
                     message: ClaudeClient.Message(role: "user", text: Self.userMessage(for: turn)),
                     shotKey: nil))
             case let .shot(shot):
-                makeRoomForAPicture()
+                makeRoomForAPicture(of: shot.base64.utf8.count)
                 entries.append(Entry(message: Self.message(for: shot), shotKey: shot.key))
             }
         }
@@ -84,11 +98,27 @@ public actor CallConversation {
     /// The oldest picture gives up its image and keeps its place: the label says so, and the
     /// answer that was given about it is still the next message, so a later "the first one you
     /// showed me" still has something to refer to.
-    private func makeRoomForAPicture() {
-        let pictures = entries.indices.filter { Self.hasPicture(entries[$0].message) }
-        guard pictures.count >= Self.maximumPictures, let oldest = pictures.first else { return }
-        entries[oldest].message = ClaudeClient.Message(
-            role: "user", text: "Screen: an earlier screenshot, no longer attached.")
+    private func makeRoomForAPicture(of incomingBytes: Int) {
+        var pictures = entries.indices.filter { Self.hasPicture(entries[$0].message) }
+        var toDrop = pictures.count >= Self.maximumPictures ? Self.evictionBlock : 0
+        var kept = pictures.reduce(0) { $0 + Self.pictureBytes(entries[$1].message) }
+        // Oldest first, until both limits hold. The picture arriving is never the one dropped:
+        // it is the one that was just asked about.
+        while let oldest = pictures.first, toDrop > 0 || kept + incomingBytes > Self.pictureByteBudget {
+            kept -= Self.pictureBytes(entries[oldest].message)
+            entries[oldest].message = ClaudeClient.Message(
+                role: "user", text: "Screen: an earlier screenshot, no longer attached.")
+            pictures.removeFirst()
+            toDrop -= 1
+        }
+    }
+
+    /// The encoded size of the pictures a message carries, which is what goes on the wire.
+    static func pictureBytes(_ message: ClaudeClient.Message) -> Int {
+        message.blocks.reduce(0) { total, block in
+            if case let .image(_, base64) = block { return total + base64.utf8.count }
+            return total
+        }
     }
 
     static func hasPicture(_ message: ClaudeClient.Message) -> Bool {

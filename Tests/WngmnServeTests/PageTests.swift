@@ -1246,7 +1246,9 @@ struct ScreenshotRowTests {
     @Test("Its row says Screen, with no latency tag and no Ask button", .enabled(if: PageTests.nodeIsAvailable))
     func rowMarkup() throws {
         let html = try run("handleEvent(\(Self.shot)); return questions[0].el.innerHTML;")
-        #expect(html.contains("Screen"))
+        // The label element itself. "Screen" alone is met by the word "Screenshot" in the
+        // row's text, and passed with the label blank and with no speaker on the row at all.
+        #expect(html.contains("<div class=\"who\">Screen</div>"), "\(html)")
         #expect(html.contains("Screenshot · region · 1500×900"))
         #expect(!html.contains(" ms<"), "a screenshot has no latency: \(html)")
         #expect(!html.contains("class=\"ask\""), "it is already asked: \(html)")
@@ -1264,7 +1266,7 @@ struct ScreenshotRowTests {
                 + "|" + document.getElementById("stageBody").innerHTML;
             """)
         #expect(got.hasPrefix("true|"))
-        #expect(got.contains("Screen"))
+        #expect(got.contains("<div class=\"who\">Screen</div>"), "\(got)")
         #expect(!got.contains("Caller"), "the stage head called a screenshot the caller")
         #expect(got.contains("Asking"))
     }
@@ -1283,14 +1285,20 @@ struct ScreenshotRowTests {
         #expect(got == "2|true")
     }
 
-    @Test("Its answer finds it by the key the frame carried", .enabled(if: PageTests.nodeIsAvailable))
+    /// The fixture's key cannot be rebuilt from its `t`. With one that can — `screen@83.412`
+    /// beside `t: 83.412` — this passed with `q.key ||` deleted from `questionKey`, because the
+    /// rebuilt spelling happened to agree. That agreement is the thing not to rely on: it is
+    /// how an answer once failed to find its row.
+    @Test("Its answer finds it by the key the frame carried, not one rebuilt from its time", .enabled(if: PageTests.nodeIsAvailable))
     func answerFindsTheRow() throws {
         let got = try run("""
-            handleEvent(\(Self.shot));
+            const frame = {type:'shot', key:'screen@83.412', t:83.4124, mode:'region', w:1500, h:900, bytes:1};
+            handleEvent(frame);
+            handleEvent(frame);
             handleEvent({type:'answer_done', key:'screen@83.412', text:'A two-pointer merge.'});
-            return questions[0].answer + "|" + document.getElementById("stageBody").innerHTML;
+            return questions.length + "|" + questions[0].answer + "|" + document.getElementById("stageBody").innerHTML;
             """)
-        #expect(got.hasPrefix("A two-pointer merge.|"))
+        #expect(got.hasPrefix("1|A two-pointer merge.|"), "\(got.prefix(40))")
         #expect(got.contains("two-pointer merge"))
         #expect(!got.contains("Asking"))
     }
@@ -1309,17 +1317,43 @@ struct ScreenshotRowTests {
     /// Not cosmetic. With a row that has no `ms`, `worst` came out undefined, `max` NaN, and
     /// every bar in the chart was drawn at NaN — the whole chart, not one odd bar — while the
     /// median and worst tiles printed "undefined".
+    ///
+    /// A question comes *after* the shot, because `addShot` draws no chart and writes no count:
+    /// with the shot last, everything read here was written before it existed, and this test
+    /// passed on a page that had never heard of a screenshot. The row count is asserted too, so
+    /// that "two questions counted" cannot be read off a page that simply dropped the frame.
     @Test("A shot stays out of the latency chart and the question count", .enabled(if: PageTests.nodeIsAvailable))
     func staysOutOfTheNumbers() throws {
         let got = try run("""
             handleEvent(\(Self.question));
             handleEvent(\(Self.shot));
-            return document.getElementById("count").textContent + "|" + document.getElementById("chart").innerHTML
-                + "|" + document.getElementById("median").textContent + "|" + document.getElementById("worst").textContent;
+            handleEvent({type:'question', text:'Can you do it in place?', t0:90, t1:92, ms:88});
+            return [questions.length, document.getElementById("count").textContent,
+                    document.getElementById("med").textContent, document.getElementById("worst").textContent,
+                    document.getElementById("chart").innerHTML].join("|");
             """)
-        #expect(got.hasPrefix("1|"), "two rows, one question: \(got.prefix(12))")
+        let parts = got.split(separator: "|", maxSplits: 4).map(String.init)
+        #expect(parts[0] == "3", "three rows")
+        #expect(parts[1] == "2", "two of them questions")
+        #expect(parts[2] == "90", "the page takes the upper middle of 88 and 90")
+        #expect(parts[3] == "90")
         #expect(!got.contains("NaN"))
         #expect(!got.contains("undefined"))
+    }
+
+    /// The caption is a line of speech with a button that asks it. A shot is the last row for
+    /// as long as nobody speaks, and its label there read as something somebody had said.
+    @Test("The phone caption shows the last thing said, not a screenshot's label", .enabled(if: PageTests.nodeIsAvailable))
+    func captionSkipsShots() throws {
+        let got = try run("""
+            handleEvent(\(Self.question));
+            handleEvent(\(Self.shot));
+            renderCaption();
+            return document.getElementById("live").innerHTML + "|" + (peekTarget(questions) === questions[0]);
+            """)
+        #expect(got.contains("Let me paste this here."))
+        #expect(!got.contains("Screenshot"))
+        #expect(got.hasSuffix("|true"))
     }
 
     /// With the microphone off the wire carries no speaker at all, and a falsy speaker used to

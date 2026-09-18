@@ -89,6 +89,38 @@ struct ShotCaptureTests {
     }
 }
 
+/// A shot's row is keyed by its time, rounded to the millisecond, so two shots must never
+/// round to the same one.
+@Suite("Shot clock")
+struct ShotClockTests {
+    @Test("A shot is stamped with the stream time, to the millisecond")
+    func usesTheClock() {
+        #expect(ShotCapture.nextT(now: 83.41249, last: -.infinity) == 83.412)
+    }
+
+    /// `offline` has no capture clock, so `now` is the newest line seen and stands still between
+    /// lines. Stepping the *unrounded* value by a millisecond is not enough: 5.0004 and 5.0014
+    /// are a millisecond apart and both round to keys a reader would take for different rows
+    /// only by luck. Stepping from the rounded value cannot collide.
+    @Test("On a clock that stands still, each shot is a millisecond after the last")
+    func neverRepeats() {
+        var last = -Double.infinity
+        var keys = Set<String>()
+        for _ in 0..<500 {
+            last = ShotCapture.nextT(now: 5.0004, last: last)
+            keys.insert(EventEncoder.number(last))
+        }
+        #expect(keys.count == 500)
+    }
+
+    @Test("A clock that jumps backwards does not take the shots back with it")
+    func neverGoesBackwards() {
+        let first = ShotCapture.nextT(now: 90, last: -.infinity)
+        let second = ShotCapture.nextT(now: 12, last: first)
+        #expect(second > first)
+    }
+}
+
 /// The half of `wngmn shot` that is not a network call. The executable has no test target,
 /// so whatever it decides has to be decided here to be tested at all.
 @Suite("Shot client")
@@ -106,7 +138,7 @@ struct ShotClientTests {
     func outcomes() {
         #expect(ShotCapture.outcome(status: 202, port: 7373) == .accepted)
         let cases: [(Int, String)] = [
-            (403, "--token"), (404, "restart"), (405, "restart"), (503, "--serve"), (400, "400"), (0, "0"),
+            (403, "--token"), (404, "restart"), (405, "restart"), (503, "503"), (400, "400"), (0, "0"),
         ]
         for (status, hint) in cases {
             guard case let .failed(why) = ShotCapture.outcome(status: status, port: 7373) else {

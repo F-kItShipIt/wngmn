@@ -176,7 +176,7 @@ start wngmn again.
 **Rehearse it.** Press both keys once before the call, the way you run `selftest`. The first
 shot of a machine's life is when macOS asks, and the middle of an interview is the wrong time
 to be reading a permissions dialog. macOS also re-confirms this category roughly monthly — see
-*The roughly thirty-day reauthorisation* below — and that prompt is just as badly timed.
+*The roughly thirty-day reauthorisation* above — and that prompt is just as badly timed.
 
 Not verified on the machine this was written on, because wngmn is launched from a shell there:
 how long the grant survives for the *bundle* launched through LaunchServices. `install.sh`

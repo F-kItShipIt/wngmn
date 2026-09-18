@@ -41,7 +41,7 @@ jobs:
       - name: Build
         run: swift build -c release
 
-      # Node gates most of the page tests: 76 of the 81 tests in PageTests.swift carry
+      # Node gates most of the page tests: nearly nine in ten of those in PageTests.swift carry
       # `.enabled(if: PageTests.nodeIsAvailable)`, which shells out to `node --version` and
       # reports false if that fails. A missing Node therefore skips them, and a skip is
       # indistinguishable from a pass in the summary line — the job would go green having
@@ -50,7 +50,7 @@ jobs:
       - name: Node present
         run: |
           node --version || {
-            echo "::error::node is not on PATH; 76 of the 81 page tests would skip silently"
+            echo "::error::node is not on PATH; most of the page tests would skip silently"
             exit 1
           }
 

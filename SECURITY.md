@@ -82,7 +82,7 @@ What it is **not** a defence against, stated plainly so nobody relies on it:
   your profile or notes. With **auto** on it carries the running conversation — every turn
   that closed, yours and theirs, and every answer so far. And after a `wngmn shot` it carries
   a **picture of your screen**, which then stays in that conversation and is sent again with
-  every later turn until the call ends. A picture is not like a sentence: it takes whatever
+  every later turn until wngmn exits. A picture is not like a sentence: it takes whatever
   else was on the display with it. `wngmn install-model` asks macOS to fetch a speech model through
   `AssetInventory`; that is an OS asset download, not a transmission of anything of yours.
 * **No audio is written to disk.** Buffers are processed in memory and discarded. The only
@@ -123,9 +123,25 @@ you can post to it, and the running wngmn will then photograph your screen and s
 picture to Anthropic on your credential. That is the design — it is how `wngmn shot`, bound to
 a key, reaches it — and it is the same population that could already read the transcript, but
 what it can now cause is different in kind: not a read of what was said, but a capture of
-whatever is on the display. Code running under your account can take screenshots by itself,
-so this does not hand it a capability; it hands it *your API key's* eyes. If that matters on
-your machine, do not run with `--serve` while untrusted code is running as you.
+whatever is on the display.
+
+**And it does hand that code a capability it did not have.** Screen Recording is granted per
+app, not per account, so most code running as you cannot see your windows by itself: a
+LaunchAgent, a browser's native-messaging host, an editor extension in an app you never
+granted. Through `/shot` any of them can have wngmn take the picture with your terminal's
+grant — silently, since the shutter sound is off — and then read the model's account of it
+from `/events`, which is just as open. It never gets the pixels; it gets what Claude said was
+on your screen, and you pay for the call. Closing that means a token on loopback, which is the
+trade described above and still not made. If untrusted code runs as you, do not leave wngmn
+serving.
+
+**A browser cannot reach it at all**, which is narrower than it sounds and needed saying
+separately. The loopback rule alone would not stop one: the rebinding path described under
+*The `Host` check* delivers a page that is same-origin with this server and connects from
+127.0.0.1. So `/shot` refuses any request that carries `Origin` or `Sec-Fetch-Site` — every
+browser sends `Origin` on a POST, however the name resolved, and nothing in a browser is a
+client of this route, since the page has no trigger for it — and refuses any request not
+addressed to `127.0.0.1` or `[::1]` by address. Not `localhost`, not a `.local` name.
 
 **Reading is not same-origin checked; only state-changing POSTs are.** Refusing a cross-site
 `GET` would break following a link to the page, so `/` and `/events` are served to any GET
@@ -167,7 +183,12 @@ transcript and every answer, pause the tap and mute the microphone through `/con
 press Ask. The exception is `/shot`. It is refused unless the connection comes from this
 machine — `127.0.0.1` or `::1` — whatever the listener is bound to and whatever token is
 presented, so a token that has leaked to the network cannot be used to make the Mac
-photograph its own screen. Each
+photograph its own screen.
+
+`wngmn shot` itself presents the stored token only to a server that has just refused it
+without one. Nothing lets a client check that whatever is listening on the port *is* wngmn, so
+offering the `--listen` token unasked would put it, in a URL, in front of any local process
+that had taken 7373. A `--token` given on the command line is sent as given. Each
 ask starts a streaming Claude call with a 64,000-token ceiling, charged to your credential.
 There is no rate limit, no cap on simultaneous asks and no spend cap, so a loop of POSTs runs
 up a real bill and can saturate the key in the middle of a call.

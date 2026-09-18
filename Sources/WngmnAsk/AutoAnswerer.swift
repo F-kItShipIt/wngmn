@@ -253,8 +253,9 @@ public actor AutoAnswerer {
 
     /// Writes end-of-call notes from the whole conversation and pushes them to every page.
     ///
-    /// Nothing to summarise when auto never ran — the ledger is built from answered turns —
-    /// so it says so rather than summarising an empty conversation.
+    /// Nothing to summarise when nothing was sent — the ledger is built from what auto
+    /// answered and from screenshots — so it says so rather than summarising an empty
+    /// conversation.
     public func summarise() async {
         // Before the guard, not after it. Notes asked for while an answer is out would be
         // written beside it, from a ledger holding the question and not the reply, and
@@ -286,7 +287,7 @@ public actor AutoAnswerer {
     /// the conversation that answer is written from.
     private func settleOvertaken(_ keys: some Sequence<String>) {
         for key in keys {
-            broadcast(Self.answerDoneFrame(key: key, text: "_Answered with the screenshot after this one._"))
+            broadcast(Self.answerDoneFrame(key: key, text: "*Answered with the screenshot after this one.*"))
         }
     }
 

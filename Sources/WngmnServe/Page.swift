@@ -628,8 +628,15 @@ function bumpUnseen(current, transcriptVisible) {
 /// disappeared the moment the line was answered would leave the text stranded with no way
 /// back to the answer it already has. `ask` refuses to spend a second call on a question
 /// that has one, so pointing at it is safe in both states — only the label changes.
+//
+// The newest thing that was *said*. A screenshot row is last in the list for as long as nobody
+// speaks, and the caption is a line of speech with a button that asks it: showing a shot's
+// label there read as something somebody had said, over a button naming a different row.
 function peekTarget(list) {
-  return list[list.length - 1] || null;
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (!isShot(list[i])) return list[i];
+  }
+  return null;
 }
 
 // Speech in progress, if any. Held rather than read back off the element because the
@@ -646,7 +653,7 @@ function renderCaption() {
     live.innerHTML = esc(partialText) + '<span class="cursor"></span>';
     return;
   }
-  const last = questions[questions.length - 1];
+  const last = peekTarget(questions);
   live.innerHTML = last
     ? `<span class="settled">${esc(last.text)}</span>`
     : '<span class="cursor"></span>';
@@ -1732,9 +1739,10 @@ function connect() {
   };
 }
 // --- end-of-call notes ---------------------------------------------------
-// A page asks whether the call is over after a stretch of silence, but only once auto has
-// actually run — a page that never turned auto on has no ledger to summarise and should not
-// be nagged. `No` snoozes until the next question resets the idle clock.
+// A page asks whether the call is over after a stretch of silence, but only once something
+// has been sent — an auto answer, or a screenshot, either of which arrives with an `auto`
+// stats frame. A page that sent nothing has no ledger to summarise and should not be nagged.
+// `No` snoozes until the next question resets the idle clock.
 const CALL_IDLE_MS = 20000;
 let lastActivity = Date.now();
 let autoUsed = false;

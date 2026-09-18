@@ -457,12 +457,19 @@ Every request is gated in this order, and the order is deliberate.
    anything: the three content types a cross-origin POST may carry without a preflight are
    all refused, and this server answers no preflight because `OPTIONS` is not an allowed
    method.
-6. **This machine, `/shot` only.** The connection's remote endpoint must be `127.0.0.1`,
-   `::1`, or the first of those as an IPv4-mapped IPv6 address — which Network.framework's
-   own `isLoopback` does not recognise, and a dual-stack listener can hand over. It applies
-   whatever the listener is bound to. Under `--listen` anyone on the network holding the token
-   can read the transcript; that must not extend to making the Mac photograph its own screen.
-   It is the only route that looks at who is asking rather than at what they sent.
+6. **This machine, `/shot` only** — checked inside that route's handler, so after every gate
+   above, and before the body is parsed. Three parts. The connection's remote endpoint must
+   be `127.0.0.1`, `::1`, or the first of those as an IPv4-*mapped* IPv6 address, which
+   Network.framework's own `isLoopback` does not recognise and a dual-stack listener can hand
+   over. Not the IPv4-*compatible* `::127.0.0.1`: `asIPv4` converts that form too, and the
+   kernel, which drops `::1` and mapped sources arriving off the wire, has its check for that
+   one compiled out. Then the request must carry neither `Origin` nor `Sec-Fetch-Site` — a
+   browser is refused as such, because a rebound `.local` name delivers a same-origin page
+   that connects *from* this machine, and nothing in a browser is a client of this route. And
+   `Host` must be `127.0.0.1` or `[::1]` by address. All of it applies whatever the listener is
+   bound to: under `--listen` anyone holding the token can read the transcript, and that must
+   not extend to making the Mac photograph its own screen. It is the only route that looks at
+   who is asking rather than at what they sent.
 
 | Route | Method | Behaviour |
 | --- | --- | --- |

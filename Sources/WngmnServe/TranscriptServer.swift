@@ -461,7 +461,7 @@ public final class TranscriptServer: Sendable {
         case "/summarise":
             summarise(on: connection)
         case "/shot":
-            shot(payload: request.body, on: connection)
+            shot(request, on: connection)
         default:
             send(Self.response(status: "404 Not Found", body: "no such path"), on: connection, close: true)
         }
@@ -473,8 +473,21 @@ public final class TranscriptServer: Sendable {
     ///
     /// The handler runs before the 202 is sent, as it does for `/summarise`, so a caller that
     /// has its status back knows the request was handed over.
-    private func shot(payload: String, on connection: NWConnection) {
+    private func shot(_ request: HTTPRequest, on connection: NWConnection) {
+        let payload = request.body
         guard Self.isLoopback(connection.endpoint) else {
+            return send(Self.response(status: "403 Forbidden", body: "this machine only"),
+                        on: connection, close: true)
+        }
+        // The loopback rule cannot see past a browser. Any `.local` name passes the Host check,
+        // mDNS can re-point one at 127.0.0.1, and a page loaded that way is same-origin with
+        // this server and connects *from* this machine. So a browser is refused as such:
+        // nothing in one is a client of this route — the page has no trigger — and every
+        // browser sends `Origin` on a POST however the name resolved. For a client that sends
+        // neither header, the request must have been addressed to this machine by address.
+        guard request.headers["origin"] == nil, request.headers["sec-fetch-site"] == nil,
+              Self.isLoopbackLiteral(request.headers["host"])
+        else {
             return send(Self.response(status: "403 Forbidden", body: "this machine only"),
                         on: connection, close: true)
         }
@@ -509,9 +522,25 @@ public final class TranscriptServer: Sendable {
         guard case let .hostPort(host, _) = endpoint else { return false }
         switch host {
         case let .ipv4(address): return address.isLoopback
-        case let .ipv6(address): return address.isLoopback || address.asIPv4?.isLoopback == true
+        // Gated on the *mapped* form. `asIPv4` also converts the deprecated IPv4-compatible
+        // `::a.b.c.d`, and the kernel, which drops `::1` and mapped sources arriving off the
+        // wire, has its check for that form compiled out — so `::127.0.0.1` is an address a
+        // host on the network can send from, and ungated it read as this machine.
+        case let .ipv6(address):
+            return address.isLoopback || (address.isIPv4Mapped && address.asIPv4?.isLoopback == true)
         default: return false
         }
+    }
+
+    /// Whether a `Host` header names this machine by address: `127.0.0.1` or `[::1]`, with or
+    /// without a port. Not `localhost`, and not a `.local` name — a name is something someone
+    /// else can answer for, and the one client there is posts to `127.0.0.1`.
+    static func isLoopbackLiteral(_ host: String?) -> Bool {
+        guard let host = host?.lowercased() else { return false }
+        if host.hasPrefix("[") {
+            return host == "[::1]" || host.hasPrefix("[::1]:")
+        }
+        return host == "127.0.0.1" || host.hasPrefix("127.0.0.1:")
     }
 
     /// Kicks off end-of-call notes. The notes stream back over `/events` as `summary_*`

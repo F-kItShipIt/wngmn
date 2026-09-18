@@ -488,7 +488,7 @@ public struct Options: Sendable, Equatable {
       you turn on the page's prefetch toggle, which sends every caller question as it
       lands, without a press, or its auto toggle, which sends every turn as it ends.
       `wngmn shot` sends a picture of your screen, and it stays in the conversation, so
-      it is sent again with every later turn until the call ends.
+      it is sent again with every later turn until wngmn exits.
       --seconds <n>          selftest duration (default 3)
       --speed <n>            offline playback speed vs real time (default 8); the recogniser
                              must keep up with the endpointer, so this is not free

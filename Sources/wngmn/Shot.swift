@@ -16,18 +16,16 @@ import WngmnServe
 /// `WngmnCore`, because this target has no tests. What is left here is the one network call.
 enum ShotClient {
     static func run(options: Options) async -> Int32 {
-        // The server's token is wherever it found it: given on the command line, which is
-        // never stored, or in the store. With neither, a loopback-only server has none.
-        let token = options.serveToken ?? TokenStore().load()
-        var request = URLRequest(url: ShotCapture.triggerURL(port: options.servePort, token: token))
-        request.httpMethod = "POST"
-        request.timeoutInterval = 5
-        request.httpBody = Data(ShotCapture.triggerBody(mode: options.shotMode).utf8)
-        request.setValue("application/json", forHTTPHeaderField: "content-type")
-
         do {
-            let (_, response) = try await URLSession.shared.data(for: request)
-            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            // A token given on the command line is used. The stored one is offered only to a
+            // server that has just refused a request without it: a loopback-only server has
+            // no token and ignores one, and nothing here can tell that the process on this port
+            // is wngmn — so sending the stored `--listen` token unasked would hand it, in a URL,
+            // to whatever happens to be listening on 7373.
+            var status = try await post(options, token: options.serveToken)
+            if status == 403, options.serveToken == nil, let stored = TokenStore().load() {
+                status = try await post(options, token: stored)
+            }
             switch ShotCapture.outcome(status: status, port: options.servePort) {
             case .accepted:
                 return 0
@@ -39,6 +37,16 @@ enum ShotClient {
             EventWriter.note("wngmn: \(ShotCapture.unreachable(port: options.servePort))")
             return 1
         }
+    }
+
+    private static func post(_ options: Options, token: String?) async throws -> Int {
+        var request = URLRequest(url: ShotCapture.triggerURL(port: options.servePort, token: token))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 5
+        request.httpBody = Data(ShotCapture.triggerBody(mode: options.shotMode).utf8)
+        request.setValue("application/json", forHTTPHeaderField: "content-type")
+        let (_, response) = try await URLSession.shared.data(for: request)
+        return (response as? HTTPURLResponse)?.statusCode ?? 0
     }
 }
 
@@ -86,7 +94,12 @@ actor ShotTaker {
         } catch {
             return await fail(mode, "could not make a temporary directory for the screenshot: \(error)")
         }
-        defer { try? FileManager.default.removeItem(at: directory) }
+        // Known to teardown as well as to this function. wngmn only ever ends by a signal, and
+        // `exit` does not resume a suspended function, so a `defer` here never runs on the way
+        // out: a Ctrl-C between the shutter and the delete would leave a picture of the screen
+        // in the temporary directory, with nothing to sweep it.
+        Self.liveDirectory.withLock { $0 = directory }
+        defer { Self.discardLiveDirectory() }
         let file = directory.appendingPathComponent("shot.png")
 
         _ = await BoundedProcess.run(
@@ -114,6 +127,10 @@ actor ShotTaker {
                 size = shrunk
             }
         }
+
+        // The bytes are in hand, so the file goes now — before the size check, the encoding and
+        // the hand-off, not when this function happens to return.
+        Self.discardLiveDirectory()
 
         guard ShotCapture.fitsTheAPI(byteCount: data.count) else {
             return await fail(
@@ -149,9 +166,20 @@ actor ShotTaker {
     /// The row's key is built from `t`, so two shots must never share one. They can when no
     /// capture clock is running — `offline` has none — and `t` falls back to the last line seen.
     private func uniqueT() -> Double {
-        let t = max(streamNow(), lastT + 0.001)
-        lastT = t
-        return t
+        lastT = ShotCapture.nextT(now: streamNow(), last: lastT)
+        return lastT
+    }
+
+    /// The directory a shot is being taken into, if one is.
+    private static let liveDirectory = Mutex<URL?>(nil)
+
+    /// Removes it. Idempotent, and callable from teardown as well as from `take`.
+    static func discardLiveDirectory() {
+        let directory = liveDirectory.withLock { url -> URL? in
+            defer { url = nil }
+            return url
+        }
+        if let directory { try? FileManager.default.removeItem(at: directory) }
     }
 
     /// A warning, for the log and the side panel, and a row with the reason on it, because the

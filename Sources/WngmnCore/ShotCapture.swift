@@ -1,7 +1,7 @@
 import Foundation
 
 /// How much of the screen a shot takes.
-public enum ShotMode: String, Sendable, Equatable, CaseIterable {
+public enum ShotMode: String, Sendable, Equatable {
     /// The main display, at once.
     case screen
     /// The native crosshair: drag a rectangle, or press Space for a window. Esc cancels.
@@ -102,6 +102,17 @@ public enum ShotCapture {
         return (bigEndian(bytes[16..<20]), bigEndian(bytes[20..<24]))
     }
 
+    /// The time to stamp a shot with: the stream clock, rounded to the millisecond the key is
+    /// spelled to, and never at or before the last shot's. Two shots must not share a key, and
+    /// the clock can stand still — `offline` has no capture clock, so "now" there is the newest
+    /// line seen — or jump backwards. Stepping the unrounded value by a millisecond is not
+    /// enough, because two values a millisecond apart can still round to the same key.
+    public static func nextT(now: Double, last: Double) -> Double {
+        let rounded = (max(now, 0) * 1000).rounded() / 1000
+        guard last.isFinite, rounded <= last else { return rounded }
+        return ((last * 1000).rounded() + 1) / 1000
+    }
+
     // MARK: - The client, `wngmn shot`
 
     /// Where `wngmn shot` posts. 127.0.0.1 and nothing else: the route is answered only to
@@ -132,8 +143,6 @@ public enum ShotCapture {
             .failed("the wngmn on port \(port) refused the token; pass the --token it was started with")
         case 404, 405:
             .failed("the wngmn on port \(port) does not know `shot`; it is an older build, so restart it")
-        case 503:
-            .failed("the wngmn on port \(port) cannot take screenshots; it has to be started with --serve")
         default:
             .failed("the wngmn on port \(port) answered \(status)")
         }

@@ -32,12 +32,15 @@ struct ShotRouteTests {
         try await body("127.0.0.1:\(port)", seen)
     }
 
-    func post(_ url: String, _ body: String) async throws -> (status: Int, body: String) {
+    func post(
+        _ url: String, _ body: String, headers: [String: String] = [:]
+    ) async throws -> (status: Int, body: String) {
         var request = URLRequest(url: URL(string: url)!)
         request.httpMethod = "POST"
         request.timeoutInterval = 5
         request.httpBody = Data(body.utf8)
         request.setValue("application/json", forHTTPHeaderField: "content-type")
+        for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
         let (data, response) = try await URLSession.shared.data(for: request)
         return ((response as? HTTPURLResponse)?.statusCode ?? 0, String(decoding: data, as: UTF8.self))
     }
@@ -109,6 +112,44 @@ struct ShotRouteTests {
         }
     }
 
+    /// The loopback rule cannot see past a browser. SECURITY.md already concedes that any
+    /// `.local` name passes the Host check and that mDNS can re-point one at 127.0.0.1; a page
+    /// loaded that way is same-origin with this server and connects *from* 127.0.0.1. So the
+    /// route refuses browsers as such. Nothing in a browser is a client of it — the page has no
+    /// trigger — and every browser sends `Origin` on a POST, however the name resolved.
+    @Test("Anything a browser sent is refused, even from this machine and even same-origin")
+    func refusesBrowsers() async throws {
+        try await withServer(port: 17408) { host, seen in
+            let sameOrigin = try await post("http://\(host)/shot", #"{"mode":"screen"}"#,
+                headers: ["origin": "http://\(host)", "sec-fetch-site": "same-origin"]).status
+            #expect(sameOrigin == 403)
+            let originOnly = try await post("http://\(host)/shot", #"{"mode":"screen"}"#,
+                headers: ["origin": "http://\(host)"]).status
+            #expect(originOnly == 403)
+            let metadataOnly = try await post("http://\(host)/shot", #"{"mode":"screen"}"#,
+                headers: ["sec-fetch-site": "none"]).status
+            #expect(metadataOnly == 403)
+            #expect(seen.all.isEmpty, "a browser took a screenshot")
+        }
+    }
+
+    /// The second half of the same defence, for a client that sends neither header: the request
+    /// has to have been addressed to this machine by address, not by a name someone else can
+    /// answer for.
+    @Test("It must be addressed to 127.0.0.1 or [::1], not to a name")
+    func refusesANamedHost() async throws {
+        try await withServer(port: 17409) { host, seen in
+            for name in ["evil.local:17409", "localhost:17409", "samis-macbook-pro.local:17409"] {
+                let status = try await post("http://\(host)/shot", #"{"mode":"screen"}"#,
+                                            headers: ["host": name]).status
+                #expect(status == 403, "accepted a request addressed to \(name)")
+            }
+            #expect(seen.all.isEmpty)
+            let literal = try await post("http://\(host)/shot", #"{"mode":"screen"}"#).status
+            #expect(literal == 202)
+        }
+    }
+
     // MARK: - What counts as this machine
 
     func endpoint(_ host: NWEndpoint.Host) -> NWEndpoint { .hostPort(host: host, port: 50_000) }
@@ -128,6 +169,18 @@ struct ShotRouteTests {
         let mapped = try #require(IPv6Address(bytes))
         #expect(!mapped.isLoopback, "the premise: Network.framework does not call this loopback")
         #expect(TranscriptServer.isLoopback(endpoint(.ipv6(mapped))))
+    }
+
+    /// `asIPv4` converts two forms, not one: the mapped `::ffff:a.b.c.d`, and the deprecated
+    /// IPv4-*compatible* `::a.b.c.d`. The kernel drops `::1` and mapped sources that arrive off
+    /// the wire; its check for the compatible form is compiled out. So `::127.0.0.1` is an
+    /// address a host on the network can put in a packet, and it must not read as this machine.
+    @Test("An IPv4-compatible address is not loopback, whatever asIPv4 makes of it")
+    func compatibleAddressIsNotLoopback() throws {
+        let bytes = Data([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 0, 0, 1])
+        let compatible = try #require(IPv6Address(bytes))
+        #expect(compatible.asIPv4?.isLoopback == true, "the premise: asIPv4 converts this form too")
+        #expect(!TranscriptServer.isLoopback(endpoint(.ipv6(compatible))))
     }
 
     @Test("Anything else is not: a LAN address, a name, a socket path")

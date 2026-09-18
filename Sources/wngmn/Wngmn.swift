@@ -180,7 +180,11 @@ struct Wngmn {
             // and a region shot can sit under a crosshair for a minute.
             shotTrigger.withLock { $0 = { mode in Task { await taker.take(mode) } } }
             // SIGINT from a terminal reaches a crosshair by itself; `wngmn stop` does not.
-            teardown.onTeardown { BoundedProcess.terminateLive() }
+            // The child first, so it is not still writing the file that is then removed.
+            teardown.onTeardown {
+                BoundedProcess.terminateLive()
+                ShotTaker.discardLiveDirectory()
+            }
         }
 
         do {
