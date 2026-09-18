@@ -13,10 +13,9 @@
 /// reply. Here it is a property of a value type instead.
 ///
 /// Pure and time-free, like `TurnBatcher`: no clock, no task, no actor. Generic over the item
-/// so that this target never learns what a turn or a screenshot is.
+/// so that this target never learns what is being queued.
 public struct AnswerQueue<Item: Sendable>: Sendable {
     public enum Command: Sendable {
-        /// Nothing to do.
         case none
         /// Make one request carrying every item in `batch`, in this order.
         case send(id: Int, batch: [Item])
@@ -30,11 +29,11 @@ public struct AnswerQueue<Item: Sendable>: Sendable {
 
     public init() {}
 
-    /// Nothing in flight and nothing waiting.
-    public var isIdle: Bool { inFlight == nil && pending.isEmpty }
+    var isIdle: Bool { inFlight == nil && pending.isEmpty }
 
-    /// An item arrived. `preempts` is for the item that must not wait behind an answer nobody
-    /// needs any more — a screenshot, which is usually cutting in on "let me paste this here".
+    /// An item arrived. `preempts` is for an item that must not wait behind an answer nobody
+    /// needs any more: something the user did deliberately, rather than something overheard.
+    /// Nothing spoken sets it.
     public mutating func enqueue(_ item: Item, preempts: Bool = false) -> Command {
         pending.append(item)
         guard let id = inFlight else { return sendPending() }

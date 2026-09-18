@@ -17,6 +17,7 @@ struct AutoAnswererTests {
             var concurrent = 0
             var maxConcurrent = 0
             var requests: [[String]] = []
+            var cancelledCalls = 0
         }
         let state = Mutex(State())
 
@@ -31,6 +32,11 @@ struct AutoAnswererTests {
         var maxConcurrent: Int { state.withLock { $0.maxConcurrent } }
         /// What each request carried, as message texts, in the order the requests began.
         var requests: [[String]] { state.withLock { $0.requests } }
+        /// Requests whose task was cancelled, counted the moment the cancel landed. Observed
+        /// through a cancellation handler because `Gate.wait()` cannot be woken by a cancel: a
+        /// test that only looked at what came out afterwards passed with both `task.cancel()`
+        /// calls deleted, since the reply of a request marked cancelled is discarded either way.
+        var cancelledCalls: Int { state.withLock { $0.cancelledCalls } }
     }
 
     /// Holds every request at the door until it is opened, so a test can do things while a
@@ -75,7 +81,11 @@ struct AutoAnswererTests {
                     s.requests.append(messages.map(\.text))
                     return s.reply
                 }
-                await gate?.wait()
+                await withTaskCancellationHandler {
+                    await gate?.wait()
+                } onCancel: {
+                    h.state.withLock { $0.cancelledCalls += 1 }
+                }
                 h.state.withLock { $0.concurrent -= 1 }
                 try Task.checkCancellation()
                 onText(r)
@@ -85,8 +95,12 @@ struct AutoAnswererTests {
         )
     }
 
+    func turn(_ text: String, _ t0: Double) -> TurnBatcher.Turn {
+        TurnBatcher.Turn(text: text, t0: t0, t1: t0 + 1, lineCount: 1, speaker: .caller)
+    }
+
     /// Polls until `condition` holds, or gives up. The same helper `TranscriptServerTests` has.
-    func wait(until condition: () -> Bool, seconds: Double = 2) async {
+    func wait(until condition: () -> Bool, seconds: Double = 10) async {
         let deadline = ContinuousClock.now + .seconds(seconds)
         while !condition(), ContinuousClock.now < deadline {
             try? await Task.sleep(for: .milliseconds(10))
@@ -275,9 +289,6 @@ struct AutoAnswererTests {
         let h = Harness()
         let gate = Gate()
         let a = make(h, gate: gate)
-        let turn = { (text: String, t0: Double) in
-            TurnBatcher.Turn(text: text, t0: t0, t1: t0 + 1, lineCount: 1, speaker: .caller)
-        }
 
         await a.submit(turn("First question.", 1))
         await wait(until: { h.respondCalls == 1 })
@@ -297,20 +308,19 @@ struct AutoAnswererTests {
         #expect(!h.seen.contains { $0.contains("\"key\":\"caller@5\"") }, "the middle turn is context")
     }
 
-    /// No spoken turn pre-empts; this is the seam a screenshot plugs into. The cancelled turn
-    /// stays in the ledger with no reply after it — what a NONE already leaves behind.
+    /// No spoken turn pre-empts: it is for something the user did deliberately rather than
+    /// something overheard. The cancelled turn stays in the ledger with no reply after it —
+    /// what a NONE already leaves behind.
     @Test("A pre-empting item cancels the request in flight and is answered with it as context")
     func preemptionCancelsAndCarriesContext() async {
         let h = Harness()
         let gate = Gate()
         let a = make(h, gate: gate)
-        let turn = { (text: String, t0: Double) in
-            TurnBatcher.Turn(text: text, t0: t0, t1: t0 + 1, lineCount: 1, speaker: .caller)
-        }
 
         await a.submit(turn("Let me paste this here.", 1))
         await wait(until: { h.respondCalls == 1 })
         await a.submit(turn("The pasted problem.", 5), preempts: true)
+        #expect(h.cancelledCalls == 1, "the request in flight was not cancelled")
         gate.open()
         await a.idle()
 
@@ -344,9 +354,6 @@ struct AutoAnswererTests {
             broadcast: { h.record($0) },
             broadcastLive: { h.record($0) }
         )
-        let turn = { (text: String, t0: Double) in
-            TurnBatcher.Turn(text: text, t0: t0, t1: t0 + 1, lineCount: 1, speaker: .caller)
-        }
 
         await a.submit(turn("First.", 1))
         await wait(until: { calls.withLock { $0 } == 1 })
@@ -363,9 +370,6 @@ struct AutoAnswererTests {
         let h = Harness()
         let gate = Gate()
         let a = make(h, gate: gate)
-        let turn = { (text: String, t0: Double) in
-            TurnBatcher.Turn(text: text, t0: t0, t1: t0 + 1, lineCount: 1, speaker: .caller)
-        }
 
         await a.submit(turn("Asked with auto on.", 1))
         await wait(until: { h.respondCalls == 1 })
@@ -375,5 +379,67 @@ struct AutoAnswererTests {
         await a.idle()
 
         #expect(h.respondCalls == 1)
+    }
+
+    /// Unticking auto means "send nothing more". The toggle used to be read only when a turn
+    /// closed, so a batch held behind a slow request still left when that request settled —
+    /// up to the 90 s request timeout after the toggle went off.
+    @Test("Turns held behind a request are not sent once auto is switched off")
+    func heldTurnsAreDroppedWhenAutoGoesOff() async {
+        let h = Harness()
+        let gate = Gate()
+        let a = make(h, gate: gate)
+
+        await a.submit(turn("Asked with auto on.", 1))
+        await wait(until: { h.respondCalls == 1 })
+        await a.submit(turn("Held, and accepted while auto was still on.", 5))
+        h.setEnabled(false)
+        gate.open()
+        await a.idle()
+
+        #expect(h.respondCalls == 1, "a request left after auto was switched off")
+    }
+
+    /// Notes asked for mid-answer used to be written beside it, from a ledger that had the
+    /// question and not the reply, and without anything held in the queue behind it.
+    @Test("Notes asked for while an answer is out wait for it, and for what was held behind it")
+    func summariseWaitsForTheQueue() async {
+        let h = Harness()
+        let gate = Gate()
+        let a = make(h, gate: gate)
+
+        await a.submit(turn("What is your burn rate?", 1))
+        await wait(until: { h.respondCalls == 1 })
+        await a.submit(turn("And your runway?", 5))
+        let notes = Task { await a.summarise() }
+        // Every chance to go out early, which is the defect; it is not waited for otherwise.
+        await wait(until: { h.respondCalls == 2 }, seconds: 0.3)
+        #expect(h.maxConcurrent == 1, "the notes request went out beside the answer")
+
+        gate.open()
+        await notes.value
+
+        #expect(Array(h.requests.last?.prefix(4) ?? []) == [
+            "Caller: What is your burn rate?", "An answer.",
+            "Caller: And your runway?", "An answer.",
+        ], "the notes must be written from the whole conversation")
+    }
+
+    /// The cancel can land before the request exists — `perform` awaits the ledger first — and
+    /// nothing here can force that ordering, so this asserts only what must hold whichever way
+    /// the race goes: never two requests, never a failure, and the pre-empting item answered.
+    @Test("A pre-empting item that arrives before the request has left is still answered")
+    func preemptionBeforeTheRequestLeaves() async {
+        let h = Harness()
+        let a = make(h)
+
+        await a.submit(turn("Let me paste this here.", 1))
+        await a.submit(turn("The pasted problem.", 5), preempts: true)
+        await a.idle()
+
+        #expect(h.maxConcurrent == 1)
+        #expect(!h.seen.contains { $0.contains("answer_failed") })
+        #expect(h.requests.last?.last == "Caller: The pasted problem.")
+        #expect(h.seen.last { $0.contains("answer_done") }?.contains("\"key\":\"caller@5\"") == true)
     }
 }

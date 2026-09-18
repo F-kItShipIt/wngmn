@@ -54,8 +54,9 @@ public actor AutoAnswerer {
     /// Cancellations asked for, by request id. A set and not just `inFlight?.task.cancel()`
     /// because a cancel can arrive in the gap between the queue handing out an id and the
     /// request's task existing — `perform` awaits the ledger first — and would otherwise be
-    /// lost. It is also what decides a request was cancelled, rather than the error it threw:
-    /// a transport may surface cancellation as `URLError.cancelled`, or finish anyway.
+    /// lost; `perform` reads it on the far side of that await and sends nothing. It is also
+    /// what decides a request was cancelled, rather than the error it threw: a transport may
+    /// surface cancellation as `URLError.cancelled`, or finish anyway.
     private var cancelRequested: Set<Int> = []
 
     public init(
@@ -105,9 +106,8 @@ public actor AutoAnswerer {
     /// The turn is a real turn whether or not auto is on; but with auto off there is no ledger
     /// to keep and no answer to give, so it is simply not recorded. Turning auto on mid-call
     /// starts the memory from that point, which is the honest thing — it never had the earlier
-    /// turns. The toggle is read here, when the turn closes, and not again when it is sent: a
-    /// turn accepted while auto was on goes out even if auto has been switched off since, which
-    /// costs at most the one request already owed.
+    /// turns. The toggle is read here, when the turn closes, and again in `run` before anything
+    /// is sent.
     func submit(_ turn: TurnBatcher.Turn, preempts: Bool = false) {
         guard isEnabled() else { return }
         handle(queue.enqueue(turn, preempts: preempts))
@@ -133,11 +133,19 @@ public actor AutoAnswerer {
         }
     }
 
-    /// Sends batch after batch until the queue has nothing left.
     private func run(id firstID: Int, batch firstBatch: [TurnBatcher.Turn]) async {
         var next: (id: Int, batch: [TurnBatcher.Turn])? = (firstID, firstBatch)
         while let (id, batch) = next {
-            await perform(id: id, batch: batch)
+            // Read again before every send, and not only when the turn closed. Unticking auto
+            // because the call has turned confidential means "send nothing more", and a batch
+            // held behind a slow request would otherwise leave when that request settled — up
+            // to the 90 s request timeout after the toggle went off. What is skipped is not
+            // recorded either, like any turn that closes while auto is off.
+            if isEnabled() { await perform(id: id, batch: batch) }
+            // Whatever became of it, this id is finished with. A cancel that lands while the
+            // reply is being committed arrives too late to matter, and would otherwise sit in
+            // the set for the rest of the call.
+            cancelRequested.remove(id)
             if case let .send(nextID, nextBatch) = queue.settled(id) {
                 next = (nextID, nextBatch)
             } else {
@@ -153,6 +161,10 @@ public actor AutoAnswerer {
         guard let last = batch.last else { return }
         let key = Self.key(for: last)
         let (system, messages) = await conversation.startBatch(batch)
+        // A cancel can land while the ledger was being awaited, before any request exists. The
+        // turns are committed — they were said — but there is nothing to send, and launching a
+        // request only to cancel it would still be counted, and shown, as a call.
+        if cancelRequested.contains(id) { return }
         stats.calls += 1
         broadcastLive(Self.statsFrame(stats))
 
@@ -160,14 +172,12 @@ public actor AutoAnswerer {
         let respond = self.respond
         let task = Task { try await respond(system, messages) { accumulated.append($0) } }
         inFlight = (id, task)
-        // A cancel that arrived while the ledger was being awaited, before `task` existed.
-        if cancelRequested.contains(id) { task.cancel() }
         let result = await task.result
         inFlight = nil
 
         // Cancelled: the turns stay in the ledger as context and nothing is shown — the shape a
         // NONE leaves. The call was still made, so it stays counted.
-        if cancelRequested.remove(id) != nil { return }
+        if cancelRequested.contains(id) { return }
 
         switch result {
         case .success:
@@ -191,6 +201,12 @@ public actor AutoAnswerer {
     /// Nothing to summarise when auto never ran — the ledger is built from answered turns —
     /// so it says so rather than summarising an empty conversation.
     public func summarise() async {
+        // Before the guard, not after it. Notes asked for while an answer is out would be
+        // written beside it, from a ledger holding the question and not the reply, and
+        // without the turns held in the queue behind it; and a first turn whose request has
+        // not yet reached the ledger would be told there is no conversation. Bounded by the
+        // request timeout.
+        await idle()
         guard await !conversation.isEmpty else {
             broadcast(Self.summaryFailedFrame(
                 detail: "no conversation yet — turn auto on during the call to build notes"))

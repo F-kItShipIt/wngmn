@@ -51,8 +51,8 @@ struct AnswerQueueTests {
     func preemptingItemCancels() {
         var q = Queue()
         _ = q.enqueue("speech")
-        #expect(q.enqueue("shot", preempts: true) == .cancel(id: 1))
-        #expect(q.settled(1) == .send(id: 2, batch: ["shot"]))
+        #expect(q.enqueue("urgent", preempts: true) == .cancel(id: 1))
+        #expect(q.settled(1) == .send(id: 2, batch: ["urgent"]))
     }
 
     @Test("A pre-empting item carries along whatever was already waiting, in order")
@@ -60,14 +60,14 @@ struct AnswerQueueTests {
         var q = Queue()
         _ = q.enqueue("a")
         _ = q.enqueue("b")
-        #expect(q.enqueue("shot", preempts: true) == .cancel(id: 1))
-        #expect(q.settled(1) == .send(id: 2, batch: ["b", "shot"]))
+        #expect(q.enqueue("urgent", preempts: true) == .cancel(id: 1))
+        #expect(q.settled(1) == .send(id: 2, batch: ["b", "urgent"]))
     }
 
     @Test("A pre-empting item with nothing in flight is simply sent")
     func preemptingItemWhenIdle() {
         var q = Queue()
-        #expect(q.enqueue("shot", preempts: true) == .send(id: 1, batch: ["shot"]))
+        #expect(q.enqueue("urgent", preempts: true) == .send(id: 1, batch: ["urgent"]))
     }
 
     @Test("An ordinary item never cancels")

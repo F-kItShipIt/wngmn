@@ -262,7 +262,9 @@ request beside it; the ledger then held both user turns before either reply. `An
 holds it to one: `question` and `tick` enqueue and return, a single drain task owns whatever
 is out, and everything that closed meanwhile goes as one batch when it settles. A cancel is
 recorded by request id rather than applied to a task, because it can arrive in the gap
-between the queue handing out an id and the request's task existing.
+between the queue handing out an id and the request's task existing. The auto toggle is read
+when a turn closes and again before anything is sent, so nothing leaves after it goes off;
+and the end-of-call notes wait for the queue, so they are written from the whole call.
 
 **Escape hatches, each for a stated reason.** `Pipeline.activeTap` is a `Mutex`, not actor
 state, because teardown has to be callable synchronously from the signal handler: a `Task`
