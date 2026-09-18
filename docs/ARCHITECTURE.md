@@ -1,6 +1,6 @@
 # Architecture
 
-[wngmn](../README.md) · [Permissions](PERMISSIONS.md) · [Tuning](TUNING.md) · [The page](PAGE.md) · [Security](../SECURITY.md) · [Contributing](../CONTRIBUTING.md)
+[wngmn](../README.md) · [Usage](USAGE.md) · [Permissions](PERMISSIONS.md) · [Tuning](TUNING.md) · [The page](PAGE.md) · [Security](../SECURITY.md) · [Contributing](../CONTRIBUTING.md)
 
 Read this before changing anything. It covers what the five targets own, how a sample of
 audio becomes a line on a phone screen, the concurrency rules that are not negotiable, the

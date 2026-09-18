@@ -1,4 +1,6 @@
-# Using wngmn: every flag, with examples
+# Using wngmn: the flags worth knowing, with examples
+
+[wngmn](../README.md) · [Architecture](ARCHITECTURE.md) · [Permissions](PERMISSIONS.md) · [Tuning](TUNING.md) · [The page](PAGE.md) · [Security](../SECURITY.md) · [Contributing](../CONTRIBUTING.md)
 
 The [README](../README.md) gets you running. This is the rest: every flag worth knowing, what
 each one costs, and what is going on underneath. Tuning the speech detector has its own page,
@@ -33,7 +35,7 @@ Everything the Mac plays. Yes, your music too.
 wngmn --global --serve --profile me.md
 ```
 
-One URL, bookmarked forever. Switches on `--listen`; `--new-token` burns it and issues another.
+A token you choose. Switches on `--listen`. Plain `--listen` already stores a generated token and reuses it every run, so its URL is stable too; `--new-token` replaces that stored one. A `--token` you pass changes when you pass a different one.
 
 ```sh
 wngmn --token my-long-fixed-token --profile me.md
@@ -71,6 +73,16 @@ All of it, at once, for the interview that matters.
 ```sh
 wngmn --global --serve --listen --mic --mic-device "BuiltInMicrophoneDevice" --mic-open-db -31 --ask-effort medium
 ```
+
+## Auto, and your own turns
+
+Auto is on unless you start with `--no-auto`, or there is no API key to answer with. The same endpointing that draws the transcript decides when the other person has finished a turn, and the answer is drafted while they are still waiting for yours. Every turn goes into one running conversation, so each answer builds on the ones before it.
+
+Your own turns go too, not just theirs — a recogniser clips the opening of a question (`Can you write…` becomes `To, a program to…`) far more often than it loses the whole thing, so the model is given the conversation and left to decide, rather than a rule here guessing from the shape of one line.
+
+What it will not do is spend a call on your "mm-hm". Turns of your own under four words are dropped before they are sent, and the caller is never held to that floor. Four is measured, not picked: across four recorded sessions the real questions ran 7 to 12 words even when badly mangled, and the only turns below that were `Testing.` and `Hello, hello.`. Tune it with `--auto-own-min-words`, or set `0` to answer every one of them.
+
+That is at most a call per turn — turns that close while an answer is on its way go out together as one — and the side panel counts them: `auto: 1 answered · 1 call`. A turn that needs no answer gets none — the model replies `NONE` and the page shows nothing — but the call was still made and still counted, which is why the number is on screen rather than buried.
 
 ## Ask, and your own key
 

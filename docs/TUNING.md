@@ -1,6 +1,6 @@
 # Tuning
 
-[wngmn](../README.md) · [Architecture](ARCHITECTURE.md) · [Permissions](PERMISSIONS.md) · [The page](PAGE.md) · [Security](../SECURITY.md) · [Contributing](../CONTRIBUTING.md)
+[wngmn](../README.md) · [Usage](USAGE.md) · [Architecture](ARCHITECTURE.md) · [Permissions](PERMISSIONS.md) · [The page](PAGE.md) · [Security](../SECURITY.md) · [Contributing](../CONTRIBUTING.md)
 
 Making wngmn work well on a particular voice, a particular room and a particular
 conversation. Nearly all of it is a command-line flag or a file you write, and needs no

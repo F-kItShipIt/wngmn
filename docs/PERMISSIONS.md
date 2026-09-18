@@ -1,6 +1,6 @@
 # Permissions and audio routing
 
-[wngmn](../README.md) · [Architecture](ARCHITECTURE.md) · [Tuning](TUNING.md) · [The page](PAGE.md) · [Security](../SECURITY.md) · [Contributing](../CONTRIBUTING.md)
+[wngmn](../README.md) · [Usage](USAGE.md) · [Architecture](ARCHITECTURE.md) · [Tuning](TUNING.md) · [The page](PAGE.md) · [Security](../SECURITY.md) · [Contributing](../CONTRIBUTING.md)
 
 The hardest thing about running wngmn is not the code. It is that macOS can deny it audio
 without saying so, and that a denial and a quiet room produce byte-identical output. This
