@@ -22,6 +22,14 @@ struct Wngmn {
             exit(0)
         }
 
+        // A client, so it leaves here, before the profile, the server and the signal handlers.
+        // Dispatched with the other commands below, it would first have been through
+        // `startServerIfRequested` with the --port it was given — the port of the wngmn it is
+        // trying to reach.
+        if options.command == .shot {
+            exit(await ShotClient.run(options: options))
+        }
+
         // Created before the server, which needs it to serve the control route.
         let control = CaptureControl(micMuted: false, tapPaused: options.startPaused)
 
@@ -34,9 +42,13 @@ struct Wngmn {
         // The summary trigger is late-bound: the server needs it at construction, but it
         // calls into the answerer, which needs the server. The box is filled once both exist.
         let summariseTrigger = Mutex<(@Sendable () -> Void)?>(nil)
+        // Late-bound for the same reason and then some: taking a picture needs the answerer,
+        // the writer and the teardown, all of which are built after the server.
+        let shotTrigger = Mutex<(@Sendable (ShotMode) -> Void)?>(nil)
         let server = startServerIfRequested(
             options, control: control, profiles: profiles,
-            onSummarise: { summariseTrigger.withLock { $0 }?() })
+            onSummarise: { summariseTrigger.withLock { $0 }?() },
+            onShot: { mode in shotTrigger.withLock { $0 }?(mode) })
 
         // Real-time auto-answering. Only when a page is being served (there is somewhere to
         // push answers) and gated at runtime by the page's `auto` toggle, off by default.
@@ -100,6 +112,11 @@ struct Wngmn {
             questionSink = nil
         }
 
+        // The newest stream time any line has carried. A screenshot is stamped from the
+        // capture timeline, so that its row reads on the same clock as the lines around it;
+        // this is what it falls back to where no such clock runs — `offline` has none, and
+        // its lines carry file seconds, which no wall clock could be made to agree with.
+        let newestStreamTime = Mutex(0.0)
         let writer = EventWriter(
             // Speech still being spoken goes to open pages but is never retained: it is
             // superseded within the second, and remembering it evicts the questions a
@@ -108,6 +125,11 @@ struct Wngmn {
                 { @Sendable event, line in
                     if event.isReplayable { server.broadcast(line) } else { server.broadcastLive(line) }
                     questionSink?(event)
+                    switch event {
+                    case let .partial(_, t, _): newestStreamTime.withLock { $0 = max($0, t) }
+                    case let .question(_, _, t1, _, _, _, _): newestStreamTime.withLock { $0 = max($0, t1) }
+                    default: break
+                    }
                 }
             }
         )
@@ -145,12 +167,28 @@ struct Wngmn {
         teardown.installSignalHandlers()
         if let server { teardown.onTeardown { server.stop() } }
 
+        // Shared by both capture sources so their timestamps have one origin — and made here
+        // rather than inside `runCapture`, so a screenshot can be stamped from it too.
+        let timeline = CaptureTimeline()
+        if let autoAnswerer {
+            let taker = ShotTaker(
+                answerer: autoAnswerer, writer: writer,
+                streamNow: {
+                    timeline.seconds(forHostTime: HostClock.now()) ?? newestStreamTime.withLock { $0 }
+                })
+            // Returns at once, as the server requires: it calls this on its one serial queue,
+            // and a region shot can sit under a crosshair for a minute.
+            shotTrigger.withLock { $0 = { mode in Task { await taker.take(mode) } } }
+            // SIGINT from a terminal reaches a crosshair by itself; `wngmn stop` does not.
+            teardown.onTeardown { BoundedProcess.terminateLive() }
+        }
+
         do {
             switch options.command {
             case .run:
                 try await runCapture(
                     options: options, terms: terms, writer: writer,
-                    teardown: teardown, control: control, profiles: profiles)
+                    teardown: teardown, control: control, profiles: profiles, timeline: timeline)
             case .selftest:
                 let passed = await Selftest.run(options: options, writer: writer, teardown: teardown)
                 exit(passed ? 0 : 1)
@@ -164,8 +202,8 @@ struct Wngmn {
                 try await runOffline(options: options, terms: terms, writer: writer)
             case .installModel:
                 try await installModel(options: options)
-            case .help:
-                break
+            case .help, .shot:
+                break   // both left before anything above was built
             }
         } catch {
             writer.emit(.error(code: "fatal", detail: "\(error)"))
@@ -223,7 +261,8 @@ struct Wngmn {
     /// that transcribes to a page nobody can open is not what they wanted.
     private static func startServerIfRequested(
         _ options: Options, control: CaptureControl, profiles: ProfileSource,
-        onSummarise: @escaping @Sendable () -> Void
+        onSummarise: @escaping @Sendable () -> Void,
+        onShot: @escaping @Sendable (ShotMode) -> Void
     ) -> TranscriptServer? {
         guard options.serve else { return nil }
         let log = openLog(options)
@@ -236,6 +275,7 @@ struct Wngmn {
             onAsk: askHandler(options: options, profiles: profiles),
             onControl: controlHandler(control: control),
             onSummarise: onSummarise,
+            onShot: onShot,
             log: log,
             hangoverMilliseconds: options.endpointer.hangoverMs
         ))
@@ -269,6 +309,12 @@ struct Wngmn {
         }
         if let log {
             if !log.restored.isEmpty {
+                // A screenshot's row is born asking, and only a frame under its key ends that.
+                // One whose request was in flight when wngmn died comes back asking, with
+                // nothing left to answer it: the conversation that held the picture is gone.
+                for frame in ShotCapture.framesClosingUnansweredShots(in: log.restored.map(\.line)) {
+                    server.broadcast(frame)
+                }
                 EventWriter.note(
                     "wngmn: resumed \(log.restored.count) event(s) from \(log.url.path)"
                 )
@@ -512,7 +558,8 @@ struct Wngmn {
 
     private static func runCapture(
         options: Options, terms: TermList, writer: EventWriter,
-        teardown: TeardownCoordinator, control: CaptureControl, profiles: ProfileSource
+        teardown: TeardownCoordinator, control: CaptureControl, profiles: ProfileSource,
+        timeline: CaptureTimeline
     ) async throws {
         var tapConfiguration = SystemAudioTap.Configuration()
         tapConfiguration.bundleIDs = options.bundleIDs
@@ -525,9 +572,6 @@ struct Wngmn {
         // Always request volatile results, even when partial lines are suppressed: they are
         // the fallback when a forced final comes back empty.
         transcriberConfiguration.volatileResults = true
-
-        // Shared by both capture sources so their timestamps have one origin.
-        let timeline = CaptureTimeline()
 
         let pipeline = Pipeline(
             configuration: Pipeline.Configuration(

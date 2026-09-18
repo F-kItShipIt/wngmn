@@ -31,11 +31,12 @@ public typealias AskHandler = @Sendable (
 
 /// Serves the live transcript over HTTP on this machine.
 ///
-/// Four routes: `/` returns the page, `/events` holds a Server-Sent Events connection open
+/// Six routes: `/` returns the page, `/events` holds a Server-Sent Events connection open
 /// and receives every JSON Lines event the pipeline emits, `/ask` starts an answer that then
-/// streams over `/events` to every page, and `/control` applies a capture change. The
-/// browser does the reconnecting, so a page left open through a laptop sleep recovers on
-/// its own.
+/// streams over `/events` to every page, `/control` applies a capture change, `/summarise`
+/// asks for the end-of-call notes, and `/shot` asks for a picture of the screen — the one
+/// route answered only to this machine. The browser does the reconnecting, so a page left
+/// open through a laptop sleep recovers on its own.
 ///
 /// Binding is loopback by default. `listenOnLAN` puts the transcript of a press interview on
 /// the wifi, so it is gated behind a token that must appear on every request.
@@ -56,6 +57,10 @@ public final class TranscriptServer: Sendable {
         /// Triggers end-of-call notes over the whole conversation. Fire-and-forget: the
         /// summary streams back as `summary_*` frames, so the POST just accepts and returns.
         public var onSummarise: (@Sendable () -> Void)?
+        /// Takes a picture of the screen and answers it. Fire-and-forget, and it must return
+        /// at once: it is called on the server's one serial queue, which carries the listener
+        /// and every connection, and a region shot can sit under a crosshair for a minute.
+        public var onShot: (@Sendable (ShotMode) -> Void)?
         /// Mirrors the replay buffer to disk, so a wngmn that dies mid-interview can be
         /// resumed instead of coming back with nothing to tell the pages that reconnect.
         /// Nil disables it entirely — see `--no-log`.
@@ -70,6 +75,7 @@ public final class TranscriptServer: Sendable {
             onAsk: AskHandler? = nil,
             onControl: ControlHandler? = nil,
             onSummarise: (@Sendable () -> Void)? = nil,
+            onShot: (@Sendable (ShotMode) -> Void)? = nil,
             log: EventLog? = nil,
             hangoverMilliseconds: Double = EndpointerConfig().hangoverMs
         ) {
@@ -79,6 +85,7 @@ public final class TranscriptServer: Sendable {
             self.onAsk = onAsk
             self.onControl = onControl
             self.onSummarise = onSummarise
+            self.onShot = onShot
             self.log = log
             self.hangoverMilliseconds = hangoverMilliseconds
         }
@@ -416,7 +423,7 @@ public final class TranscriptServer: Sendable {
             return send(Self.response(status: "403 Forbidden", body: "bad or missing token"),
                         on: connection, close: true)
         }
-        let allowed = ["/ask", "/control", "/summarise"].contains(request.path) ? "POST" : "GET"
+        let allowed = ["/ask", "/control", "/summarise", "/shot"].contains(request.path) ? "POST" : "GET"
         guard request.method == allowed else {
             return send(Self.response(status: "405 Method Not Allowed", body: "\(allowed) only"),
                         on: connection, close: true)
@@ -453,8 +460,57 @@ public final class TranscriptServer: Sendable {
             control(payload: request.body, on: connection)
         case "/summarise":
             summarise(on: connection)
+        case "/shot":
+            shot(payload: request.body, on: connection)
         default:
             send(Self.response(status: "404 Not Found", body: "no such path"), on: connection, close: true)
+        }
+    }
+
+    /// Asks for a picture of the screen. Answered only to this machine, whatever the listener
+    /// is bound to: under `--listen` anyone on the network holding the token can already read
+    /// the transcript, and that must not extend to making this Mac photograph its own screen.
+    ///
+    /// The handler runs before the 202 is sent, as it does for `/summarise`, so a caller that
+    /// has its status back knows the request was handed over.
+    private func shot(payload: String, on connection: NWConnection) {
+        guard Self.isLoopback(connection.endpoint) else {
+            return send(Self.response(status: "403 Forbidden", body: "this machine only"),
+                        on: connection, close: true)
+        }
+        guard let onShot = configuration.onShot else {
+            return send(
+                Self.response(status: "503 Service Unavailable",
+                              body: #"{"error":"screenshots are not configured"}"#,
+                              contentType: "application/json"),
+                on: connection, close: true)
+        }
+        guard let data = payload.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let mode = (root["mode"] as? String).flatMap(ShotMode.init(rawValue:))
+        else {
+            return send(
+                Self.response(status: "400 Bad Request",
+                              body: #"{"error":"mode must be screen or region"}"#,
+                              contentType: "application/json"),
+                on: connection, close: true)
+        }
+        onShot(mode)
+        send(Self.response(status: "202 Accepted", body: #"{"ok":true}"#,
+                           contentType: "application/json"),
+             on: connection, close: true)
+    }
+
+    /// Whether a connection's remote end is this machine: 127.0.0.1, ::1, or the first of those
+    /// as an IPv4-mapped IPv6 address, which a dual-stack listener can hand over and which
+    /// Network.framework's own `isLoopback` does not recognise. Strict on purpose — 127.0.0.2
+    /// is refused, a name is refused — because the only client there is uses 127.0.0.1.
+    static func isLoopback(_ endpoint: NWEndpoint) -> Bool {
+        guard case let .hostPort(host, _) = endpoint else { return false }
+        switch host {
+        case let .ipv4(address): return address.isLoopback
+        case let .ipv6(address): return address.isLoopback || address.asIPv4?.isLoopback == true
+        default: return false
         }
     }
 

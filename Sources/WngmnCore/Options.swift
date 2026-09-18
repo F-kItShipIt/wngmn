@@ -22,6 +22,9 @@ public struct Options: Sendable, Equatable {
         /// they left behind. A capture graph outliving its run holds the audio device and
         /// the port.
         case stop
+        /// Ask the wngmn that is already running to take a picture of the screen and answer
+        /// it. A client, like `stop`: it starts nothing of its own. Meant to be bound to a key.
+        case shot
         /// Download the speech model for a locale. Explicit, because a 396 MB download is
         /// not something to start by accident an hour before an interview.
         case installModel = "install-model"
@@ -134,6 +137,8 @@ public struct Options: Sendable, Equatable {
     /// Latency is the binding constraint on a live call, so this defaults low rather than
     /// to the API's own default of `high`.
     public var askEffort = "low"
+    /// What `wngmn shot` asks for: the whole screen, or a region to drag.
+    public var shotMode = ShotMode.screen
     /// How many words one of your own turns must carry before auto spends a call on it.
     /// Zero answers every one of them. See `TurnBatcher.ownTurnMinimumWords` for where the
     /// four came from; it is a flag because the right floor depends on how you talk.
@@ -156,7 +161,7 @@ public struct Options: Sendable, Equatable {
         if let first = args.first, !first.hasPrefix("-") {
             guard let command = Command(rawValue: first) else {
                 throw ParseError(
-                    "unknown command '\(first)'; expected run, selftest, devices, miccheck, stop, offline or install-model"
+                    "unknown command '\(first)'; expected run, selftest, devices, miccheck, stop, shot, offline or install-model"
                 )
             }
             o.command = command
@@ -217,6 +222,13 @@ public struct Options: Sendable, Equatable {
                 o.serveOnLAN = true
             case "--new-token": o.rotateToken = true; o.serve = true; o.serveOnLAN = true
             case "--start-paused": o.startPaused = true; o.serve = true
+            case "--region":
+                // Accepted nowhere else. A flag that parses and then does nothing is the worst
+                // way for one to fail, and `wngmn --region` would do exactly that.
+                guard o.command == .shot else {
+                    throw ParseError("--region belongs to `wngmn shot`")
+                }
+                o.shotMode = .region
             case "--mic": o.mic = true
             // Naming a device is an unambiguous request to capture from it.
             case "--mic-device": o.micDeviceUID = try value(arg); o.mic = true
@@ -279,6 +291,14 @@ public struct Options: Sendable, Equatable {
         }
 
         if !explicitBundleIDs.isEmpty { o.bundleIDs = explicitBundleIDs }
+        // Everywhere else --port and --token mean "serve", and `main` starts the server before
+        // it looks at the command. For a client they say where to post. Left alone, `wngmn shot
+        // --port 7373` would try to bind the port it is posting to and report that another
+        // wngmn may be running — the one it was looking for.
+        if o.command == .shot {
+            o.serve = false
+            o.serveOnLAN = false
+        }
         if o.command == .offline, o.inputPath == nil {
             throw ParseError("offline requires an audio file path")
         }
@@ -372,6 +392,9 @@ public struct Options: Sendable, Equatable {
       wngmn install-model          download the speech model for --locale
       wngmn miccheck [options]     measure this room and this voice, print --mic-open-db
       wngmn stop                   stop every running wngmn and release its audio devices
+      wngmn shot [--region]        have the running wngmn take a picture of the screen and
+                                   answer it; --region drags a rectangle instead. Bind it to
+                                   a key. Takes the --port and --token the server was given.
 
     CAPTURE
       --bundle-id <id>       scope the tap to this app; repeatable. Replaces the default list,

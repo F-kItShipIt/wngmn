@@ -88,3 +88,63 @@ struct ShotCaptureTests {
         #expect(ShotCapture.triggerBody(mode: .region) == #"{"mode":"region"}"#)
     }
 }
+
+/// The half of `wngmn shot` that is not a network call. The executable has no test target,
+/// so whatever it decides has to be decided here to be tested at all.
+@Suite("Shot client")
+struct ShotClientTests {
+    @Test("It posts to this machine, and only this machine")
+    func triggerURL() {
+        #expect(ShotCapture.triggerURL(port: 7373, token: nil).absoluteString == "http://127.0.0.1:7373/shot")
+        #expect(ShotCapture.triggerURL(port: 7400, token: "abcd2345").absoluteString
+                == "http://127.0.0.1:7400/shot?t=abcd2345")
+    }
+
+    /// Bound to a key, this command has no terminal to print to and nobody watching one. The
+    /// exit status is all a launcher sees, so every refusal is a failure and says why.
+    @Test("Each way of being refused says what to do about it")
+    func outcomes() {
+        #expect(ShotCapture.outcome(status: 202, port: 7373) == .accepted)
+        let cases: [(Int, String)] = [
+            (403, "--token"), (404, "restart"), (405, "restart"), (503, "--serve"), (400, "400"), (0, "0"),
+        ]
+        for (status, hint) in cases {
+            guard case let .failed(why) = ShotCapture.outcome(status: status, port: 7373) else {
+                Issue.record("\(status) was accepted"); continue
+            }
+            #expect(why.contains(hint), "\(status): \(why)")
+        }
+        #expect(ShotCapture.unreachable(port: 7400).contains("7400"))
+        #expect(ShotCapture.unreachable(port: 7400).contains("--serve"))
+    }
+}
+
+/// A shot row is born asking, and only a frame under its key ends that. If wngmn died with a
+/// request in flight, `--resume` replays the row and nothing will ever answer it: the
+/// conversation that held the picture is gone.
+@Suite("Resumed screenshots")
+struct ResumedShotTests {
+    let shot5 = #"{"type":"shot","key":"screen@5","t":5,"mode":"region","w":10,"h":10,"bytes":9}"#
+    let shot9 = #"{"type":"shot","key":"screen@9","t":9,"mode":"screen","w":10,"h":10,"bytes":9}"#
+
+    @Test("A restored screenshot with no answer is closed, with the reason")
+    func closesTheUnanswered() {
+        let frames = ShotCapture.framesClosingUnansweredShots(in: [
+            #"{"type":"question","text":"Hello?","t0":1,"t1":2,"ms":90}"#, shot5,
+            #"{"type":"answer_done","key":"screen@5","text":"A merge."}"#, shot9,
+        ])
+        #expect(frames.count == 1)
+        #expect(frames[0].contains(#""type":"answer_failed""#))
+        #expect(frames[0].contains(#""key":"screen@9""#))
+        #expect(frames[0].contains("stopped before"))
+    }
+
+    @Test("An answered or already-failed screenshot is left alone, and so is everything else")
+    func leavesTheRestAlone() {
+        #expect(ShotCapture.framesClosingUnansweredShots(in: [
+            shot5, #"{"type":"answer_failed","key":"screen@5","detail":"HTTP 413"}"#,
+            #"{"type":"answer_done","key":"caller@3","text":"x"}"#, "not json at all", "",
+        ]).isEmpty)
+        #expect(ShotCapture.framesClosingUnansweredShots(in: []).isEmpty)
+    }
+}

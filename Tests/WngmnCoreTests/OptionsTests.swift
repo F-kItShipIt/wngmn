@@ -333,7 +333,7 @@ struct ArgumentEdgeTests {
 
     @Test("Every command the parser accepts is in the usage block")
     func usageListsEveryCommand() {
-        for command in ["miccheck", "stop", "selftest", "devices", "offline", "install-model"] {
+        for command in ["miccheck", "stop", "shot", "selftest", "devices", "offline", "install-model"] {
             #expect(Options.usage.contains("wngmn \(command)"),
                     "`\(command)` is accepted but not documented in USAGE")
         }
@@ -383,6 +383,54 @@ struct SilentNoOpTests {
             Issue.record("should have been rejected")
         } catch {
             #expect(!"\(error)".hasSuffix(";"), "message trails off: \(error)")
+        }
+    }
+}
+
+/// `wngmn shot` is a client: it asks a wngmn that is already running to take a picture.
+@Suite("Shot options")
+struct ShotOptionsTests {
+    @Test("shot is a command, and the whole screen is what it takes unless told otherwise")
+    func parsesShot() throws {
+        let o = try Options.parse(["shot"])
+        #expect(o.command == .shot)
+        #expect(o.shotMode == .screen)
+    }
+
+    @Test("--region asks for the crosshair")
+    func parsesRegion() throws {
+        #expect(try Options.parse(["shot", "--region"]).shotMode == .region)
+    }
+
+    /// Everywhere else `--port` and `--token` mean "serve", because that is the only reason to
+    /// give them, and `main` starts the server before it looks at the command. A `shot` that
+    /// inherited that would try to bind the very port it is meant to post to — and exit with
+    /// "cannot serve on port 7373; another wngmn may already be running", which is the wngmn
+    /// it was looking for. With nothing running it would bind it, and open a session log.
+    @Test("For shot, --port and --token say where to post, not what to serve")
+    func portAndTokenDoNotServe() throws {
+        let o = try Options.parse(["shot", "--region", "--port", "7400", "--token", "abcd2345"])
+        #expect(o.servePort == 7400)
+        #expect(o.serveToken == "abcd2345")
+        #expect(!o.serve, "a client must never start a server")
+        #expect(!o.serveOnLAN)
+    }
+
+    @Test("--region means nothing outside shot, and says so")
+    func regionNeedsShot() {
+        #expect(throws: Options.ParseError.self) { try Options.parse(["--region"]) }
+        #expect(throws: Options.ParseError.self) { try Options.parse(["offline", "x.wav", "--region"]) }
+    }
+
+    @Test("shot is in the usage block and in the unknown-command message")
+    func documented() {
+        #expect(Options.usage.contains("wngmn shot"))
+        #expect(Options.usage.contains("--region"))
+        do {
+            _ = try Options.parse(["shoot"])
+            Issue.record("an unknown command parsed")
+        } catch {
+            #expect("\(error)".contains("shot"), "the list of commands leaves shot out: \(error)")
         }
     }
 }

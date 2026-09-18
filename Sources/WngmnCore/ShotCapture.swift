@@ -102,6 +102,72 @@ public enum ShotCapture {
         return (bigEndian(bytes[16..<20]), bigEndian(bytes[20..<24]))
     }
 
+    // MARK: - The client, `wngmn shot`
+
+    /// Where `wngmn shot` posts. 127.0.0.1 and nothing else: the route is answered only to
+    /// this machine, so there is nowhere else worth asking.
+    public static func triggerURL(port: UInt16, token: String?) -> URL {
+        var components = URLComponents()
+        components.scheme = "http"
+        components.host = "127.0.0.1"
+        components.port = Int(port)
+        components.path = "/shot"
+        if let token { components.queryItems = [URLQueryItem(name: "t", value: token)] }
+        // Every part above is a literal or a number; this cannot fail.
+        return components.url ?? URL(fileURLWithPath: "/")
+    }
+
+    public enum ClientOutcome: Sendable, Equatable {
+        case accepted
+        case failed(String)
+    }
+
+    /// What a reply means. Bound to a key, this command has no terminal and nobody watching
+    /// one; the exit status is all a launcher sees, so every refusal is a failure with a reason.
+    public static func outcome(status: Int, port: UInt16) -> ClientOutcome {
+        switch status {
+        case 202:
+            .accepted
+        case 403:
+            .failed("the wngmn on port \(port) refused the token; pass the --token it was started with")
+        case 404, 405:
+            .failed("the wngmn on port \(port) does not know `shot`; it is an older build, so restart it")
+        case 503:
+            .failed("the wngmn on port \(port) cannot take screenshots; it has to be started with --serve")
+        default:
+            .failed("the wngmn on port \(port) answered \(status)")
+        }
+    }
+
+    public static func unreachable(port: UInt16) -> String {
+        "no wngmn is serving on port \(port); start one with --serve, or pass its --port"
+    }
+
+    // MARK: - After a restart
+
+    /// Frames that close screenshots a restored log left asking. A shot row is born asking and
+    /// only a frame under its key ends that; if wngmn died with the request in flight,
+    /// `--resume` brings the row back and nothing will ever answer it, because the
+    /// conversation that held the picture did not survive the restart.
+    public static func framesClosingUnansweredShots(in restored: [String]) -> [String] {
+        var asking: [String] = []
+        for line in restored {
+            guard let data = line.data(using: .utf8),
+                  let frame = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let type = frame["type"] as? String, let key = frame["key"] as? String
+            else { continue }
+            switch type {
+            case "shot": if !asking.contains(key) { asking.append(key) }
+            case "answer_done", "answer_failed": asking.removeAll { $0 == key }
+            default: break
+            }
+        }
+        return asking.map { key in
+            #"{"type":"answer_failed","key":\#(EventEncoder.quote(key)),"#
+                + #""detail":"wngmn stopped before this screenshot was answered"}"#
+        }
+    }
+
     /// What `wngmn shot` posts to the running wngmn. A few bytes on purpose: the server drops
     /// any request over 64 KiB and reads bodies as text, so the picture itself never crosses it.
     public static func triggerBody(mode: ShotMode) -> String {
