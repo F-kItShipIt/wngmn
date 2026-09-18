@@ -1,6 +1,6 @@
 # The page
 
-[wngmn](../README.md) · [Architecture](ARCHITECTURE.md) · [Permissions](PERMISSIONS.md) · [Tuning](TUNING.md) · [Security](../SECURITY.md) · [Contributing](../CONTRIBUTING.md)
+[wngmn](../README.md) · [Usage](USAGE.md) · [Architecture](ARCHITECTURE.md) · [Permissions](PERMISSIONS.md) · [Tuning](TUNING.md) · [Security](../SECURITY.md) · [Contributing](../CONTRIBUTING.md)
 
 `--serve` puts the event stream on a page at `http://127.0.0.1:7373`. That page is what you
 look at for the whole interview — the transcript, the answer you are about to read aloud,

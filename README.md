@@ -18,272 +18,253 @@ A teleprompter for the half of the conversation you can't script.
 
 **It heard the question. You take the credit.**
 
-You take the call on Zoom or Meet. wngmn runs beside it, transcribes the question on your Mac, and pushes it to your phone. Tap Ask and Claude drafts a reply out of your profile. wngmn is not trying to join your meeting. It is already sitting next to you.
+You're on a call. wngmn sits beside it on your Mac, writes down what the other person says, and puts an answer in front of you — drafted by Claude, out of notes you wrote — while they are still waiting for yours. Interviews, sales calls, investor calls, any meeting. It never joins the call, and nobody on it can see it.
 
-![Question lands, Ask pressed, answer streams](docs/images/ask.gif)
+![The caller finishes, the answer arrives, nobody touched the page](docs/images/auto.gif)
 
-Every other tool in this space wants an account, a subscription, an Electron shell, and a virtual audio driver that outlives the uninstall. wngmn is 2.9 MB with no daemon, no driver and no account. It runs when you run it and it's gone when you quit. The only bill is your own Anthropic key.
+No account, no subscription, no extra audio software. Under 4 MB. It runs when you run it and it's gone when you quit. The only bill is your own Claude key.
 
-## Install
+## 1. Install
+
+You need a Mac on **macOS 26** ( → About This Mac says which) and about fifteen minutes, most of it waiting.
+
+Everything in a grey box is typed into **Terminal**. Open it: ⌘-Space, type `Terminal`, press Return. Paste one box at a time, press Return, and wait for the line ending in `%` to come back.
+
+**Apple's developer tools.** A window pops up → **Install**. If it says *already installed*, good.
 
 ```sh
-git clone https://github.com/F-kItShipIt/wngmn.git && cd wngmn
-Scripts/install.sh
+xcode-select --install
 ```
 
-Builds from source, drops wngmn.app in place, puts `wngmn` on your PATH. Sudo never comes up.
+**wngmn itself.** It builds for a few minutes and ends with `==> Installed.`
 
-Or one line, same outcome. It's 142 lines of shell. You're about to pipe it into bash, so read it.
+```sh
+git clone https://github.com/F-kItShipIt/wngmn.git ~/wngmn && cd ~/wngmn && Scripts/install.sh
+```
+
+**Apple's speech model.** 396 MB, once.
+
+```sh
+wngmn install-model --locale en-US
+```
+
+**Check your Mac lets it listen.** It plays a beep and says `PASS` or `FAIL`. If macOS asks to let Terminal record audio, say **Allow**.
+
+```sh
+wngmn selftest
+```
+
+**Your Claude key.** A key is a password that lets wngmn ask Claude, and pays for it. A Claude.ai subscription isn't one. Get it at [platform.claude.com/settings/keys](https://platform.claude.com/settings/keys): sign up → **Billing**, add a little credit → **API keys** → **Create key** → copy it. It starts `sk-ant-` and is shown once. Then save it — swap in your own key, keep the quote marks:
+
+```sh
+echo 'export ANTHROPIC_API_KEY=sk-ant-YOUR-KEY-HERE' >> ~/.zshrc
+```
+
+Quit Terminal (⌘Q) and open it again. Done.
+
+**`command not found: wngmn`?** Scroll up: the installer printed a line starting `echo 'export PATH=`. Paste that line, press Return, quit Terminal and open it again.
+
+**`selftest` said FAIL?** The line after FAIL names the cause. *Digital silence* means macOS hasn't let Terminal listen yet:  → System Settings → Privacy & Security → **Screen & System Audio Recording** → switch on **Terminal** in the top list (not there? press **+** and pick it from Applications → Utilities) → quit Terminal with ⌘Q, open it, run `wngmn selftest` again. *Far too quiet* means turn the volume up. [More](docs/PERMISSIONS.md).
+
+<details>
+<summary>One-line install, pin a version, uninstall</summary>
+
+The one-liner — 142 lines of shell, so read it first:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/F-kItShipIt/wngmn/main/Scripts/bootstrap.sh | bash
 ```
 
-Three more and you're armed:
+The same, pinned to a version (`git tag` lists them; `shot` and auto-by-default came after v0.3.1):
 
 ```sh
-wngmn install-model --locale en-US    # Apple's 396 MB model. Mandatory.
-wngmn selftest                        # tone = tap OK
-export ANTHROPIC_API_KEY=sk-ant-...   # For Ask only. Shell profile it.
+curl -fsSL https://raw.githubusercontent.com/F-kItShipIt/wngmn/main/Scripts/bootstrap.sh | WNGMN_REF=v0.3.1 bash
 ```
 
-`selftest` failed? macOS denies this politely: every call returns success and hands back silence. Grant System Audio Recording, [docs/PERMISSIONS.md](docs/PERMISSIONS.md).
-
-<details>
-<summary>Pin a version, uninstall</summary>
+Uninstall, from inside `~/wngmn`:
 
 ```sh
-git checkout v0.3.1 && Scripts/install.sh                 # inside a clone
-curl -fsSL https://raw.githubusercontent.com/F-kItShipIt/wngmn/main/Scripts/bootstrap.sh | WNGMN_REF=v0.3.1 bash
 Scripts/install.sh --uninstall
 ```
 
-No download. The bundle is ad-hoc signed, so only the machine that built it gets the audio tap.
+It builds from source. The app is signed for the Mac that built it and no other.
 
 </details>
 
-## Quick start
-
-**1. Write a profile.** Format's further down. Call it `me.md`. Do this the night before.
-
-**2. Start wngmn before the call, not during it.**
+## 2. Start it
 
 ```sh
-wngmn --listen --profile me.md
+wngmn --listen --global
 ```
 
-**3. Open the printed URL on your phone.** Bookmark it. The token survives restarts.
+It prints two links and keeps running. **Leave that window open for the whole call** — close it and wngmn stops. To stop it yourself, click the window and press Ctrl-C. **Start it before the call, not during it.**
 
 ```
 wngmn: live transcript → http://192.168.1.20:7373/?t=4fq8zj2m
 wngmn:                    → http://your-mac.local:7373/?t=4fq8zj2m   (same page, stable name)
 ```
 
-**4. Prop the phone just under your webcam.** Join the call. Your eyes stay honest.
+If it also says `no credentials`, your key isn't saved — back to step 1.
 
-Want it on the Mac? `wngmn --serve --profile me.md`, then http://127.0.0.1:7373.
+## 3. Open the link on your phone
 
-It died and the call didn't:
+Use the links in *your* Terminal, not the example above. Phone on the same Wi-Fi as the Mac. Copy the second link and AirDrop or message it to your phone — or type it into the phone's browser exactly, `?t=` and all. Bookmark it: it's the same every time.
 
-```sh
-wngmn --resume
-```
+You should see this. Prop the phone just under your webcam, so your eyes stay where they should.
 
-No call to point it at? Feed it a recording from a clone:
+<img src="docs/images/phone.png" alt="The page on a phone: the transcript, and an answer" width="560">
 
-```sh
-wngmn offline Tests/WngmnAudioTests/Fixtures/two-questions.wav --serve --profile profiles/example-interview.md
-```
+No phone? Right-click the link in Terminal → **Open URL**.
 
-## On your phone, during the interview
+## 4. Join the call
 
-<img src="docs/images/phone.png" alt="Left: the Transcript tab. Right: the Answer tab after asking" width="720">
+That's all. When they ask something, it appears on your phone. A moment later, so does an answer.
 
-- **Transcript tab.** Each question, its latency, and its own Ask. The badge tallies the ones you haven't read yet.
-- **Answer tab.** Where the reply streams in. Tap Ask and you're already here.
-- **Live caption**, along the bottom. The question taking shape while they're still talking. Its Ask goes to the newest question and flips to **View** once that question has an answer.
-- **prefetch.** Answers every caller question the second it lands, one API call apiece. Off by default; you pay for the ones you'd never have asked.
-- **sync.** Laptop and phone stay on the same row. Off by default too.
+### Try it now, without a call
 
-## Examples you'll actually type
+Start it, open the link, and play any video of someone talking **on the Mac, not the phone** — YouTube is fine. Their words land as lines; answers follow. If nothing lands, jump to [Not working?](#not-working)
 
-Both halves of the call, labelled Caller and You. Headphones on, or your mic hears them too.
+## What you can do
 
-```sh
-wngmn --serve --mic --profile me.md
-```
+### Get answers by themselves
 
-Pick the input and stop guessing the threshold. `--mic-device` switches `--mic` on for you.
+This is on from the start. Every time someone finishes talking, wngmn asks Claude and shows the answer. You press nothing.
 
-```sh
-wngmn miccheck
-wngmn --serve --mic-device "BuiltInMicrophoneDevice" --mic-open-db -31 --profile me.md
-```
+- Untick **auto** on the page to stop. Start with `--no-auto` to have it off from the beginning.
+- Small talk gets no answer. That's deliberate.
+- Each question sent to Claude costs a little on your key. On the Mac's copy of the page, the side panel keeps count: `auto: 3 answered · 4 calls` — a *call* there is one question sent to Claude, not a phone call.
 
-Something other than Zoom or Chrome. Run `devices` mid-call; the audio never comes from the process you'd bet on.
+### Ask about one line
+
+With auto off, tap **Ask** next to any line. Tap the line again later to bring its answer back — that one's free.
+
+![Question lands, Ask pressed, answer streams](docs/images/ask.gif)
+
+### Screenshot a problem
+
+They pasted the question into a doc instead of saying it. Take a picture of it. Drag a box around it — Esc cancels:
 
 ```sh
-wngmn devices                                          # mid-call
-wngmn --serve --bundle-id <id you saw> --profile me.md
+wngmn shot --region
 ```
 
-Everything the Mac plays. Yes, your music too.
+Or the whole main screen:
 
 ```sh
-wngmn --global --serve --profile me.md
+wngmn shot
 ```
 
-One URL, bookmarked forever. Switches on `--listen`; `--new-token` burns it and issues another.
+The answer shows up like any other. With auto on, wngmn remembers the picture — so when they then *say* "can you do that faster?", it knows what "that" is.
+
+**Put it on a key**, because you won't be typing mid-call:
+
+1. In Terminal, run `command -v wngmn`. It prints where wngmn lives. Copy that.
+2. Open the **Shortcuts** app → **+** → search **Run Shell Script** → double-click it.
+3. In its box: paste what you copied, a space, then `shot --region`.
+4. Click ⓘ → **Add Keyboard Shortcut** → press the keys you want.
+5. Want the whole screen on a key too? Do it again with plain `shot`.
+
+Press your key once before the call. The first time, macOS asks to let Terminal record the screen: allow it, quit Terminal (⌘Q), and start wngmn again.
+
+### Get your own words too
+
+Out of the box wngmn hears **them, not you** — it exists to catch their question. To see both sides, labelled Caller and You:
 
 ```sh
-wngmn --token my-long-fixed-token --profile me.md
+wngmn --listen --global --mic
 ```
 
-For the rambler, or the room with a fan in it. Stock: hangover 250 ms, open -45 dBFS, merge 700 ms.
+It uses whatever mic and speakers your Mac is using — the built-in ones are fine, and nothing needs plugging in first. One catch on speakers: your mic hears the other person too, so their lines can show up twice. Headphones fix that. Wired beats AirPods: a Bluetooth headset using its own mic drops the call to phone quality.
+
+### Stop it hearing them, or you
+
+Buttons at the top of the page, and they work from the phone:
+
+- **⏸ listening** → tap to stop hearing them (key: `p`). Nothing they say is written down or sent while it's paused. Start that way with `--start-paused`.
+- **mic on** (only there with `--mic`) → tap to stop wngmn hearing your mic (key: `m`). This does **not** mute you on the call — use the call app's own mute for that.
+
+### Get notes at the end
+
+Tap **▸ notes**, or say yes when it asks whether the call is over. You get meeting notes from everything auto heard, plus any screenshots, with a **copy** button. If auto was off for the whole call, there is nothing to write them from.
+
+### Make the answers sound like you
+
+Without this, answers come from general knowledge. With it, they come from *your* story. Make your file from the template and open it:
 
 ```sh
-wngmn --serve --hangover-ms 400 --open-db -38 --merge-ms 900 --profile me.md
+cp ~/wngmn/profiles/TEMPLATE.md ~/me.md && open -e ~/me.md
 ```
 
-Nothing touches the disk. Nothing to delete afterwards.
-
-```sh
-wngmn --serve --no-log --profile me.md
-```
-
-Think harder, or think elsewhere. Ships as `claude-opus-5` at `low`.
-
-```sh
-wngmn --serve --ask-model claude-opus-5 --ask-effort medium --profile me.md
-```
-
-They pasted the problem into a doc instead of saying it. Press a key: the wngmn that is already running takes a picture of your screen and answers it, nobody presses Ask, and the picture stays in the conversation — so when they then *say* "can you do that in place?", it knows what "that" is.
-
-```sh
-wngmn shot             # the whole screen, at once
-wngmn shot --region    # drag a rectangle; Space for a window, Esc to cancel
-```
-
-wngmn has no hotkey of its own, on purpose: bind those two to keys. In the Shortcuts app, new shortcut → **Run Shell Script** → the full path to wngmn, then `shot --region` → the ⓘ panel → **Add Keyboard Shortcut**. Shortcuts does not read your shell's `PATH`, so ask your terminal where it is — `command -v wngmn` — rather than copying anyone else's: `/opt/homebrew/bin/wngmn` on an Apple Silicon Mac with Homebrew, `/usr/local/bin` or `~/.local/bin` elsewhere. Raycast, Alfred and skhd do the same in a line. Try both once before the call: the first shot is when macOS asks for Screen Recording.
-
-All of it, at once, for the interview that matters.
-
-```sh
-wngmn --global --serve --listen --mic --mic-device "BuiltInMicrophoneDevice" --mic-open-db -31 --ask-effort medium
-```
-
-## Your profile
-
-Three `##` headings get read. Any other `##` is named at startup and then ignored, so it fails loudly instead of quietly.
-
-- `## Style`: the voice your answers arrive in.
-- `## Context`: the raw material for answers. Pile it on; it's cached after the first Ask.
-- `## Terms`: words the recogniser gets wrong, one per line: `Canonical | what it hears | another`.
+Fill it in like this, then ⌘S:
 
 ```markdown
-# Me, for interviews
+# Me
 
 ## Style
-Short sentences, concrete examples. Say "I don't know" when I don't.
-Never use the word synergy.
+Short sentences, real examples. Say "I don't know" when I don't.
 
 ## Context
-I run infrastructure for a 12-person payments startup. Before that,
-four years at a large company building experimentation tooling.
-
-When asked about a failure, tell the one about the migration that
-rolled back twice and what I changed afterward.
-
-Don't mention that I've never actually read the Kubernetes docs.
+Paste everything: your CV, the job post, your projects, the numbers you want to get right.
+The more you put here, the better the answers. It's only sent when an answer is needed.
 
 ## Terms
 Kubernetes | cooper netties | goober netties
 ```
 
-`--profile name` looks up `./profiles/name.md`; any path works. Edit it mid-call, it's re-read on every save. Vague profile, vague answers. Start from [profiles/TEMPLATE.md](profiles/TEMPLATE.md) or steal [profiles/example-interview.md](profiles/example-interview.md).
-
-## Three profiles, three answers
-
-Same binary, same question format. Only `## Context` changed.
-
-**Hiring** · `--profile hiring` · *"Tell me about a time you disagreed with your manager."*
-
-![Hiring interview: the disagreement story, straight from the profile](docs/images/use-hiring.gif)
-
-**Investor** · `--profile investor` · *"What does your burn rate look like now?"*
-
-![Investor call: burn and runway, only the numbers that are in the file](docs/images/use-investor.gif)
-
-**Technical** · `--profile technical` · *"How does the ledger handle a retry?"*
-
-![Technical deep-dive: idempotency keys, your architecture in your words](docs/images/use-technical.gif)
-
-All three ship in [`profiles/`](profiles). Copy one, swap the contents, keep the headings.
-
-## Nobody presses Ask
-
-Tick **auto** and the button stops being the point. The same endpointing that draws the transcript decides when the other person has finished a turn, and the answer is drafted while they are still waiting for yours.
-
-![auto is on: the caller finishes, the answer arrives, nobody touched the page](docs/images/auto.gif)
-
-Your own turns go too, not just theirs — a recogniser clips the opening of a question (`Can you write…` becomes `To, a program to…`) far more often than it loses the whole thing, so the model is given the conversation and left to decide, rather than a rule here guessing from the shape of one line.
-
-What it will not do is spend a call on your "mm-hm". Turns of your own under four words are dropped before they are sent, and the caller is never held to that floor. Four is measured, not picked: across four recorded sessions the real questions ran 7 to 12 words even when badly mangled, and the only turns below that were `Testing.` and `Hello, hello.`. Tune it with `--auto-own-min-words`, or set `0` to answer every one of them.
-
-That is at most a call per turn — turns that close while an answer is on its way go out together as one — and the header counts them: `auto: 1 answered · 1 call`. A turn that needs no answer gets none — the model replies `NONE` and the page shows nothing — but the call was still made and still counted, which is why the number is on screen rather than buried.
-
-## Ask, and your own key
-
-Checked in this order: `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, then `ant auth login`. Find none and it says so at startup, not mid-question: `wngmn: no Anthropic credentials, so Ask will fail on every question.`
-
-- `--ask-effort low|medium|high|xhigh|max`. Starts at `low`. A brilliant answer that arrives after you've started talking is worth nothing.
-- `--ask-model`, starting at `claude-opus-5`.
-- Each Ask ships the question, as many as six before it, and your profile to api.anthropic.com.
-- A `wngmn shot` ships a picture — shrunk to 2576 px on its long edge, which is all the model reads — and the conversation so far. Around 1,800 tokens for a dragged region, 4,800 for a whole 4K screen.
-
-## How it works
-
-```
-Zoom / Chrome ─tap─▶ endpointer ─▶ SpeechAnalyzer ─▶ page ─Ask─▶ api.anthropic.com
-  (its audio)       (RMS, 250 ms)   (on-device)      (phone)     (text on a click; a picture on a key)
+```sh
+wngmn --listen --global --profile ~/me.md
 ```
 
-The long version lives in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+**Style** is how you talk. **Context** is what you know. **Terms** fixes words it mishears: the right word first, then what it hears. Only those three `##` headings are read — any other `##` (one inside a pasted CV, say) is named when wngmn starts and everything under it is ignored, so make those `###`. wngmn says `profile …` with the sizes when it starts; `could not be read` means the path is wrong.
 
-## Output
+Ready-made ones for [hiring](profiles/hiring.md), [investor](profiles/investor.md) and [technical](profiles/technical.md) calls are in [`profiles/`](profiles). A bare name is a shortcut: `--profile hiring` reads `./profiles/hiring.md` in the folder you start wngmn from. Edit the file mid-call: **Terms**, and any answer you **Ask** for, pick it up when you save. Auto keeps the Style and Context it started with.
 
-![Partials build word by word, then a question event with its latency](docs/images/cli.gif)
+## Not working?
 
-JSON Lines on stdout, diagnostics on stderr. Pipe it into whatever you like.
+Nothing here prints an error. It just goes quiet — so check the night before.
 
-```json
-{"type":"question","text":"So tell me about the funding round.","t0":0.51,"t1":2.38,"ms":57}
-```
+| What you see | Why | Fix |
+| --- | --- | --- |
+| No lines when **they** talk | Without `--global`, wngmn only hears Zoom and Chrome | Add `--global` |
+| Still no lines, with `--global` | macOS isn't letting Terminal listen — or the call isn't playing on this Mac | `wngmn selftest`. FAIL → fix the permission in step 1. PASS → make sure the call's sound is coming out of this Mac, not your phone |
+| No lines when **you** talk | Your mic is off unless you ask | Add `--mic`. If macOS asks about the microphone, say yes — it's asking for Terminal |
+| Every line shows up twice | `--mic` on speakers: your mic is hearing them | Headphones, or drop `--mic` |
+| Lines, but no answers | No key, or **auto** is unticked | `echo $ANTHROPIC_API_KEY` — empty means it isn't saved. Tick **auto** |
+| Lines, a few answers, mostly nothing | It only answers questions. Small talk gets none | Nothing is wrong |
+| Screenshot says *Screen Recording is not granted* | macOS hasn't let Terminal see the screen | Same Settings pane as `selftest`, top list → quit Terminal, start again |
+| Phone can't open the link | Different Wi-Fi, or you started with `--serve`, which is this-Mac-only | Same Wi-Fi, and start with `--listen` |
+| It died and the call didn't | — | Start it exactly as before, plus `--resume`. The transcript comes back |
 
-`ms` is the latency for that question. `revises: true` overwrites the line before it: they paused mid-sentence and carried on. `volatile: true` means the wording isn't certain yet.
+## Cheat sheet
+
+| Type this | What it does |
+| --- | --- |
+| `wngmn --listen --global` | Start. Hears them, in any app. Prints the link for your phone |
+| `wngmn --listen --global --mic` | The same, plus your side of the call |
+| `wngmn --listen --global --profile ~/me.md` | Answers from your notes |
+| `wngmn --listen --global --no-auto` | Answers only when you tap **Ask** |
+| `wngmn --serve --global` | This Mac only → http://127.0.0.1:7373 |
+| `wngmn shot --region` | Screenshot a problem (put it on a key) |
+| `wngmn --listen --global --resume` | Pick the transcript back up after a crash |
+| `wngmn stop` | Stop every wngmn that's running |
+| `wngmn --help` | Every flag |
+
+Flags combine: `wngmn --listen --global --mic --profile ~/me.md`. The ones worth knowing, with examples: [docs/USAGE.md](docs/USAGE.md).
 
 ## Privacy
 
-There is no server, so there is nothing to collect and no way for this project to reach you. No analytics, no crash reporter, no dependencies at all. Ask runs on your own API key, which means that traffic is between you and Anthropic and nobody is standing in the middle of it.
+There is no server and no account, so there is nothing to collect. No analytics, no crash reports. What leaves your Mac, all of it, and only to Anthropic on your own key:
 
-The whole binary contains two URLs. Don't take my word for it:
+- **Audio: never.** Speech is turned into text on your Mac.
+- **auto** (on unless you pass `--no-auto`): each turn as it ends — theirs, and yours if `--mic` is on — with the conversation so far and your profile. wngmn says so when it starts.
+- **Ask:** that line, the few before it, and your profile — when you tap. Tick **prefetch** on the page and it goes for every line of theirs as it lands.
+- **shot:** a picture of your screen, when you press your key. It stays in the conversation and goes again with every later answer until wngmn quits. Whatever else is on the screen goes with it; drag a region if that matters. The file is deleted as soon as it's read.
+- **notes:** the conversation auto already sent, once more, when you tap **▸ notes**.
+- **The transcript** is saved on your own disk, answers included. `--no-log` turns that off.
+- **`--listen`** puts the page on your Wi-Fi, locked by the secret code at the end of the link — the `?t=…` part. Anyone with the full link can read along, so don't share it. Screenshots can only ever be triggered from the Mac itself.
+- **`install-model`** is a download from Apple. Nothing of yours goes with it.
 
-```sh
-strings "$(which wngmn)" | grep -oE 'https?://[a-zA-Z0-9./-]+' | sort -u
-# http://127.0.0.1
-# https://api.anthropic.com/v1/messages
-```
-
-The complete list of things that leave your Mac:
-
-- Audio: never. Not to transcribe, not to find the end of a question.
-- Ask: the question, the recent ones, your profile. Off to api.anthropic.com when you click.
-- **prefetch**, if you switch it on: every caller question goes the moment it lands, no click. Their words, not just yours.
-- **auto**, which is **on unless you start with `--no-auto`**: every turn goes as it ends, no click — theirs, and yours if `--mic` is on — and each answer builds on the ones before it in a running conversation with Claude. The loudest line on this list, which is why wngmn says so when it starts. Untick **auto** on the page to stop it mid-call. With no API key it starts off.
-- **shot**, when you press the key you bound to it: a picture of your screen — the whole display, or the region you drag — goes to api.anthropic.com with the conversation so far, and stays in that conversation until wngmn exits, so with **auto** on it goes again with every later turn. Only from this Mac: the route that takes the picture refuses the network even under `--listen`, and refuses browsers outright. It does answer anything *else* running as you, which is what your key is — and what any other local process could be; [SECURITY.md](SECURITY.md) says what that means. wngmn keeps the image in memory. The file is deleted as soon as it has been read, and the session log records that a shot was taken and how big, never the picture — though the *answer* is logged like any other, and an answer about a screenshot can quote it. Whatever else was on the screen goes too; drag a region if that matters.
-- `install-model`: a download from Apple.
-- Transcript: your local disk, and only while `--serve` is up. `--no-log` turns it off.
-- `--listen`: the page goes on your LAN, gated by the URL token.
+The fine print, including what other software on your Mac could do with it, is in [SECURITY.md](SECURITY.md).
 
 ## Is this cheating?
 
@@ -293,15 +274,13 @@ It's a prompter. Newsreaders use one. It knows only what you typed into a file, 
 
 wngmn is not a meeting recorder designed for secretly collecting conversations. It is not intended to bypass consent requirements, workplace policies, interview rules, or local recording laws. Audio and transcription laws vary depending on where you live and who is participating in the conversation. Make sure your use complies with the rules that apply to you. It is also not trying to replace your brain. It is trying to make sure your brain has backup.
 
-## Intentionally boring
+## Go deeper
 
-wngmn is intentionally boring in a few places. There is no framework where a few hundred lines of Swift will do. There is no cloud service where macOS already provides the capability locally. There is no database where a file will work.
+[More flags, with examples](docs/USAGE.md) · [the page you read during a call](docs/PAGE.md) · [permissions and audio routes](docs/PERMISSIONS.md) · [tuning the speech detector](docs/TUNING.md) · [how it's built](docs/ARCHITECTURE.md) · [security](SECURITY.md) · [regenerating the GIFs](docs/tapes/README.md)
 
 ## Contributing
 
-If you find a bug, open an issue. If you know why the audio pipeline behaves differently on a machine it has absolutely no reason to behave differently on, definitely open an issue. Pull requests are welcome. Keep changes focused, keep dependencies justified, and try not to turn the tiny HTTP server into Kubernetes.
-
-`swift test` runs 546 tests; five suites want the speech model first. Start with [CONTRIBUTING.md](CONTRIBUTING.md), then work through [permissions](docs/PERMISSIONS.md), [the page](docs/PAGE.md), [tuning](docs/TUNING.md), [architecture](docs/ARCHITECTURE.md) and [the GIFs](docs/tapes/README.md). [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) is in force. Found a security hole? GitHub private vulnerability reporting, details in [SECURITY.md](SECURITY.md).
+Found a bug? Open an issue. Know why the audio behaves differently on a machine it has no reason to behave differently on? Definitely open an issue. Pull requests are welcome: start with [CONTRIBUTING.md](CONTRIBUTING.md). [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) is in force, and security holes go through GitHub's private reporting — see [SECURITY.md](SECURITY.md).
 
 ## The name
 

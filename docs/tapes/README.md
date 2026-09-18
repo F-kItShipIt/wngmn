@@ -1,4 +1,4 @@
-# Regenerating the README media
+# Regenerating the README and docs media
 
 Three assets, all captured from real runs against the recorded fixture in
 `Tests/WngmnAudioTests/Fixtures/two-questions.wav`. Nothing here is mocked or hand-drawn, so
@@ -114,7 +114,7 @@ ffmpeg -i phone-transcript.png -i phone-answer.png \
     -filter_complex "[0]pad=iw+28:ih:0:0:color=0xffffff[a];[a][1]hstack" -y docs/images/phone.png
 ```
 
-The URL and token printed in the README's phone section are illustrative, not the ones from
+The URL and token printed under *Start it* in the README are illustrative, not the ones from
 this machine.
 
 ## `docs/images/use-*.gif` — one per profile
