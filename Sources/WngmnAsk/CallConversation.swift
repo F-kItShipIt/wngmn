@@ -25,7 +25,20 @@ public actor CallConversation {
     /// next turn even if this answer fails or is `NONE` — the other person did say it. The
     /// answer is committed separately once it arrives.
     public func startTurn(_ turn: TurnBatcher.Turn) -> (system: String, messages: [ClaudeClient.Message]) {
-        messages.append(ClaudeClient.Message(role: "user", text: Self.userMessage(for: turn)))
+        startBatch([turn])
+    }
+
+    /// Opens several turns as one request: everything that waited while the last answer was
+    /// streaming, delivered together.
+    ///
+    /// One call, so one actor hop. Appending turn by turn across awaits would let something
+    /// else land between two turns of what goes out as a single request. Each turn stays its
+    /// own message — consecutive user messages are already what a `NONE` leaves behind, and
+    /// keeping them separate keeps each one's speaker label.
+    public func startBatch(_ turns: [TurnBatcher.Turn]) -> (system: String, messages: [ClaudeClient.Message]) {
+        for turn in turns {
+            messages.append(ClaudeClient.Message(role: "user", text: Self.userMessage(for: turn)))
+        }
         return (system, messages)
     }
 
@@ -74,11 +87,13 @@ public actor CallConversation {
         are live speech-to-text: words are clipped (often the opening "Can you…" or "Write…"), \
         misheard, or split across turns, and question marks go missing. Read the whole \
         conversation so far, from both sides, to work out what is actually being asked — \
-        including a question or problem I am reading out or repeating back. Answer the most \
-        recent turn from the material when it, read in that context, calls for an answer — a \
-        question, a request, a problem to solve, something I would need to respond to. When it \
-        does not — small talk, an aside, filler — reply with exactly NONE and nothing else. \
-        Never explain a NONE.
+        including a question or problem I am reading out or repeating back. Turns are held \
+        while you are writing an answer, so several can arrive at once: look at everything \
+        since your last reply, not only the final message. Answer, from the material, the \
+        latest turn among them that, read in that context, calls for an answer — a question, a \
+        request, a problem to solve, something I would need to respond to — even when small \
+        talk or filler came after it. When none of them does — small talk, an aside, filler — \
+        reply with exactly NONE and nothing else. Never explain a NONE.
         """
         return system
     }

@@ -70,6 +70,12 @@ struct Wngmn {
         // Feed question events to the answerer in order. A fire-and-forget Task per event
         // could reorder turns; a single consumer draining an ordered stream cannot. A
         // half-second ticker closes a turn that has gone quiet past the gap.
+        //
+        // Neither waits for an answer any more: `question` and `tick` queue the turn and
+        // return, so utterances reach the batcher as they are spoken even while a long answer
+        // is streaming. When they did wait, this consumer sat blocked for the length of a
+        // request and turns closed late — and the ticker, which was not blocked, could start a
+        // second request beside the first. `AnswerQueue` is what holds it to one.
         let questionSink: (@Sendable (Event) -> Void)?
         if let autoAnswerer {
             let (stream, cont) = AsyncStream.makeStream(

@@ -85,4 +85,47 @@ struct CallConversationTests {
         #expect(!CallConversation.isNone("There is none left."))
         #expect(!CallConversation.isNone("The answer is 400k."))
     }
+
+    /// The batch is committed in one actor hop. Appending turn by turn across awaits would let
+    /// another caller's message land between two turns of what is sent as a single request.
+    @Test("A batch is committed as separate labelled messages, in order, in one request")
+    func batchCommitsInOrder() async {
+        let convo = CallConversation(profile: profile())
+        let (_, messages) = await convo.startBatch([
+            turn("What is your burn rate?"),
+            turn("About four hundred thousand.", speaker: .you),
+            turn("And your runway?"),
+        ])
+        #expect(messages.map(\.text) == [
+            "Caller: What is your burn rate?",
+            "You: About four hundred thousand.",
+            "Caller: And your runway?",
+        ])
+        #expect(messages.allSatisfy { $0.role == "user" })
+    }
+
+    @Test("A batch lands after what the conversation already holds")
+    func batchAppendsToTheLedger() async {
+        let convo = CallConversation(profile: profile())
+        _ = await convo.startTurn(turn("What is your burn rate?"))
+        await convo.finishTurn(answer: "About 400k a month.")
+        let (_, messages) = await convo.startBatch([turn("And your runway?"), turn("In months.")])
+        #expect(messages.count == 4)
+        #expect(messages[1].role == "assistant")
+        #expect(messages[3].text == "Caller: In months.")
+    }
+
+    /// Turns are held while an answer is being written and delivered together, so the newest
+    /// message is often not the one that needs answering: the caller asks, you stall aloud
+    /// ("good question, let me think"), and both arrive at once. Told to answer "the most
+    /// recent turn", the model replies NONE to the stall and the question is lost — where it
+    /// used to be sent alone and answered.
+    @Test("The protocol tells the model that several turns can arrive at once")
+    func systemPromptCoversBatches() {
+        let system = CallConversation.buildSystem(profile: profile())
+        #expect(system.contains("several can arrive at once"))
+        #expect(system.contains("everything since your last reply"))
+        #expect(!system.contains("Answer the most recent turn"),
+                "the newest message alone is no longer the unit")
+    }
 }

@@ -14,6 +14,10 @@ struct AutoAnswererTests {
             var reply = "An answer."
             var enabled = true
             var respondCalls = 0
+            var concurrent = 0
+            var maxConcurrent = 0
+            var requests: [[String]] = []
+            var cancelledCalls = 0
         }
         let state = Mutex(State())
 
@@ -24,21 +28,83 @@ struct AutoAnswererTests {
         var reply: String { state.withLock { $0.reply } }
         func setReply(_ s: String) { state.withLock { $0.reply = s } }
         var respondCalls: Int { state.withLock { $0.respondCalls } }
+        /// The most requests that were ever out at the same moment.
+        var maxConcurrent: Int { state.withLock { $0.maxConcurrent } }
+        /// What each request carried, as message texts, in the order the requests began.
+        var requests: [[String]] { state.withLock { $0.requests } }
+        /// Requests whose task was cancelled, counted the moment the cancel landed. Observed
+        /// through a cancellation handler because `Gate.wait()` cannot be woken by a cancel: a
+        /// test that only looked at what came out afterwards passed with both `task.cancel()`
+        /// calls deleted, since the reply of a request marked cancelled is discarded either way.
+        var cancelledCalls: Int { state.withLock { $0.cancelledCalls } }
     }
 
-    func make(_ h: Harness, gap: Double = 2.5, own: Bool = false) -> AutoAnswerer {
+    /// Holds every request at the door until it is opened, so a test can do things while a
+    /// request is in flight. Without it the scripted reply returns at once and nothing is ever
+    /// concurrent with anything.
+    final class Gate: Sendable {
+        struct State { var isOpen = false; var waiters: [CheckedContinuation<Void, Never>] = [] }
+        let state = Mutex(State())
+
+        func wait() async {
+            await withCheckedContinuation { continuation in
+                let alreadyOpen = state.withLock { s -> Bool in
+                    if s.isOpen { return true }
+                    s.waiters.append(continuation)
+                    return false
+                }
+                if alreadyOpen { continuation.resume() }
+            }
+        }
+
+        func open() {
+            let waiters = state.withLock { s -> [CheckedContinuation<Void, Never>] in
+                s.isOpen = true
+                defer { s.waiters = [] }
+                return s.waiters
+            }
+            waiters.forEach { $0.resume() }
+        }
+    }
+
+    func make(_ h: Harness, gap: Double = 2.5, own: Bool = false, gate: Gate? = nil) -> AutoAnswerer {
         AutoAnswerer(
             conversation: CallConversation(profile: Profile(text: "## Style\ns\n\n## Context\nc")),
             turnGapSeconds: gap,
             answerOwnQuestions: own,
             isEnabled: { h.enabled },
-            respond: { _, _, onText in
-                let r = h.state.withLock { s -> String in s.respondCalls += 1; return s.reply }
+            respond: { _, messages, onText in
+                let r = h.state.withLock { s -> String in
+                    s.respondCalls += 1
+                    s.concurrent += 1
+                    s.maxConcurrent = max(s.maxConcurrent, s.concurrent)
+                    s.requests.append(messages.map(\.text))
+                    return s.reply
+                }
+                await withTaskCancellationHandler {
+                    await gate?.wait()
+                } onCancel: {
+                    h.state.withLock { $0.cancelledCalls += 1 }
+                }
+                h.state.withLock { $0.concurrent -= 1 }
+                try Task.checkCancellation()
                 onText(r)
             },
             broadcast: { h.record($0) },
             broadcastLive: { h.record($0) }
         )
+    }
+
+    func turn(_ text: String, _ t0: Double) -> TurnBatcher.Turn {
+        TurnBatcher.Turn(text: text, t0: t0, t1: t0 + 1, lineCount: 1, speaker: .caller)
+    }
+
+    /// Polls until `condition` holds, or gives up. The same helper `TranscriptServerTests` has.
+    func wait(until condition: () -> Bool, seconds: Double = 10) async {
+        let deadline = ContinuousClock.now + .seconds(seconds)
+        while !condition(), ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
     }
 
     @Test("A caller turn is answered and pushed as a keyed answer_done frame")
@@ -47,6 +113,7 @@ struct AutoAnswererTests {
         let a = make(h)
         await a.question(text: "Tell me about the round.", t0: 1.0, t1: 2.0, speaker: .caller, now: 100.0)
         _ = await a.tick(now: 103.0)   // gap closes the turn
+        await a.idle()
 
         let done = h.seen.first { $0.contains("answer_done") }
         #expect(done != nil)
@@ -80,6 +147,7 @@ struct AutoAnswererTests {
         let a = make(h)
         await a.question(text: "Tell me about the round.", t0: t0, t1: 60.25, speaker: .caller, now: 100.0)
         _ = await a.tick(now: 103.0)
+        await a.idle()
 
         let done = h.seen.first { $0.contains("answer_done") }
         #expect(done != nil)
@@ -93,6 +161,7 @@ struct AutoAnswererTests {
         let a = make(h)
         await a.question(text: "Nice to meet you.", t0: 5.0, t1: 6.0, speaker: .caller, now: 100.0)
         _ = await a.tick(now: 103.0)
+        await a.idle()
 
         #expect(h.seen.first { $0.contains("answer_done") } == nil, "no answer is shown for NONE")
         let stats = await a.currentStats
@@ -110,6 +179,7 @@ struct AutoAnswererTests {
         let a = make(h)
         await a.question(text: "Tell me about the round.", t0: 1.0, t1: 2.0, speaker: .caller, now: 100.0)
         _ = await a.tick(now: 103.0)
+        await a.idle()
         #expect(h.respondCalls == 0)
         #expect(h.seen.isEmpty)
     }
@@ -126,6 +196,7 @@ struct AutoAnswererTests {
         )
         await a.question(text: "Tricky one?", t0: 2.0, t1: 3.0, speaker: .caller, now: 100.0)
         _ = await a.tick(now: 103.0)
+        await a.idle()
         let failed = h.seen.first { $0.contains("answer_failed") }
         #expect(failed != nil)
         #expect(failed!.contains("\"key\":\"caller@2\""))
@@ -138,6 +209,7 @@ struct AutoAnswererTests {
         // Build some ledger first.
         await a.question(text: "Tell me about the round.", t0: 1.0, t1: 2.0, speaker: .caller, now: 100.0)
         _ = await a.tick(now: 103.0)
+        await a.idle()
         h.setReply("Notes: the round, the plan.")
         await a.summarise()
         #expect(h.seen.contains { $0.contains("summary_pending") })
@@ -161,12 +233,213 @@ struct AutoAnswererTests {
         let off = make(hOff, own: false)
         await off.question(text: "How would I reverse a list?", t0: 1, t1: 2, speaker: .you, now: 100.0)
         _ = await off.tick(now: 103.0)
+        await off.idle()
         #expect(hOff.respondCalls == 0, "own questions off: not answered")
 
         let hOn = Harness()
         let on = make(hOn, own: true)
         await on.question(text: "How would I reverse a list?", t0: 1, t1: 2, speaker: .you, now: 100.0)
         _ = await on.tick(now: 103.0)
+        await on.idle()
         #expect(hOn.seen.first { $0.contains("\"key\":\"you@1\"") } != nil)
+    }
+
+    /// The hole, reproduced. `question` and `tick` used to await the answer inline, and an
+    /// actor is re-entrant while it is suspended — so with the caller's answer still streaming,
+    /// the ticker could close your turn and start a second request beside the first. The
+    /// second request was then built from a ledger holding both user turns and neither reply.
+    @Test("A turn that closes while a request is in flight does not start a second request")
+    func oneRequestAtATime() async {
+        let h = Harness()
+        let gate = Gate()
+        let a = make(h, own: true, gate: gate)
+
+        // You start speaking, which closes the caller's turn; its request stops at the gate.
+        let first = Task {
+            await a.question(text: "Tell me about the round.", t0: 1, t1: 2, speaker: .caller, now: 100.0)
+            await a.question(text: "So the round closed in March, all of it.", t0: 3, t1: 5, speaker: .you, now: 101.0)
+        }
+        await wait(until: { h.respondCalls == 1 })
+
+        // Your turn goes quiet past the gap while that request is still out — the ticker's path.
+        let ticked = Mutex(false)
+        let second = Task {
+            await a.tick(now: 110.0)
+            ticked.withLock { $0 = true }
+        }
+        await wait(until: { h.maxConcurrent == 2 || ticked.withLock { $0 } })
+
+        #expect(h.maxConcurrent == 1, "a second request started beside the first")
+
+        gate.open()
+        await first.value
+        await second.value
+        await wait(until: { h.seen.filter { $0.contains("answer_done") }.count == 2 })
+
+        #expect(h.respondCalls == 2)
+        #expect(h.requests.last == [
+            "Caller: Tell me about the round.",
+            "An answer.",
+            "You: So the round closed in March, all of it.",
+        ], "the second request must be built after the first reply is in the ledger")
+    }
+
+    @Test("Turns that close while a request is out go together, answered under the last one's key")
+    func waitingTurnsAreBatched() async {
+        let h = Harness()
+        let gate = Gate()
+        let a = make(h, gate: gate)
+
+        await a.submit(turn("First question.", 1))
+        await wait(until: { h.respondCalls == 1 })
+        await a.submit(turn("Second question.", 5))
+        await a.submit(turn("Third question.", 9))
+        gate.open()
+        await a.idle()
+
+        #expect(h.respondCalls == 2, "one request for the first turn, one for the two that waited")
+        #expect(h.requests.last == [
+            "Caller: First question.", "An answer.",
+            "Caller: Second question.", "Caller: Third question.",
+        ])
+        let done = h.seen.filter { $0.contains("answer_done") }
+        #expect(done.count == 2)
+        #expect(done.last?.contains("\"key\":\"caller@9\"") == true)
+        #expect(!h.seen.contains { $0.contains("\"key\":\"caller@5\"") }, "the middle turn is context")
+    }
+
+    /// No spoken turn pre-empts: it is for something the user did deliberately rather than
+    /// something overheard. The cancelled turn stays in the ledger with no reply after it —
+    /// what a NONE already leaves behind.
+    @Test("A pre-empting item cancels the request in flight and is answered with it as context")
+    func preemptionCancelsAndCarriesContext() async {
+        let h = Harness()
+        let gate = Gate()
+        let a = make(h, gate: gate)
+
+        await a.submit(turn("Let me paste this here.", 1))
+        await wait(until: { h.respondCalls == 1 })
+        await a.submit(turn("The pasted problem.", 5), preempts: true)
+        #expect(h.cancelledCalls == 1, "the request in flight was not cancelled")
+        gate.open()
+        await a.idle()
+
+        #expect(h.maxConcurrent == 1)
+        #expect(h.requests.last == ["Caller: Let me paste this here.", "Caller: The pasted problem."],
+                "the cancelled turn is context, with no reply after it")
+        let done = h.seen.filter { $0.contains("answer_done") }
+        #expect(done.count == 1, "the cancelled request shows nothing")
+        #expect(done.first?.contains("\"key\":\"caller@5\"") == true)
+        #expect(!h.seen.contains { $0.contains("answer_failed") }, "a cancellation is not a failure")
+        let stats = await a.currentStats
+        #expect(stats.calls == 2, "the cancelled call was still made, so it is still counted")
+        #expect(stats.answers == 1)
+    }
+
+    @Test("A failed request does not strand what was waiting behind it")
+    func failureKeepsDraining() async {
+        struct Boom: Error {}
+        let h = Harness()
+        let gate = Gate()
+        let calls = Mutex(0)
+        let a = AutoAnswerer(
+            conversation: CallConversation(profile: Profile(text: "## Style\ns\n\n## Context\nc")),
+            isEnabled: { true },
+            respond: { _, _, onText in
+                let n = calls.withLock { c -> Int in c += 1; return c }
+                await gate.wait()
+                if n == 1 { throw Boom() }
+                onText("Second time lucky.")
+            },
+            broadcast: { h.record($0) },
+            broadcastLive: { h.record($0) }
+        )
+
+        await a.submit(turn("First.", 1))
+        await wait(until: { calls.withLock { $0 } == 1 })
+        await a.submit(turn("Second.", 5))
+        gate.open()
+        await a.idle()
+
+        #expect(h.seen.contains { $0.contains("answer_failed") && $0.contains("caller@1") })
+        #expect(h.seen.contains { $0.contains("answer_done") && $0.contains("caller@5") })
+    }
+
+    @Test("A turn that closes with auto off is not queued, even behind a request in flight")
+    func autoOffIsNotQueued() async {
+        let h = Harness()
+        let gate = Gate()
+        let a = make(h, gate: gate)
+
+        await a.submit(turn("Asked with auto on.", 1))
+        await wait(until: { h.respondCalls == 1 })
+        h.setEnabled(false)
+        await a.submit(turn("Said with auto off.", 5))
+        gate.open()
+        await a.idle()
+
+        #expect(h.respondCalls == 1)
+    }
+
+    /// Unticking auto means "send nothing more". The toggle used to be read only when a turn
+    /// closed, so a batch held behind a slow request still left when that request settled —
+    /// up to the 90 s request timeout after the toggle went off.
+    @Test("Turns held behind a request are not sent once auto is switched off")
+    func heldTurnsAreDroppedWhenAutoGoesOff() async {
+        let h = Harness()
+        let gate = Gate()
+        let a = make(h, gate: gate)
+
+        await a.submit(turn("Asked with auto on.", 1))
+        await wait(until: { h.respondCalls == 1 })
+        await a.submit(turn("Held, and accepted while auto was still on.", 5))
+        h.setEnabled(false)
+        gate.open()
+        await a.idle()
+
+        #expect(h.respondCalls == 1, "a request left after auto was switched off")
+    }
+
+    /// Notes asked for mid-answer used to be written beside it, from a ledger that had the
+    /// question and not the reply, and without anything held in the queue behind it.
+    @Test("Notes asked for while an answer is out wait for it, and for what was held behind it")
+    func summariseWaitsForTheQueue() async {
+        let h = Harness()
+        let gate = Gate()
+        let a = make(h, gate: gate)
+
+        await a.submit(turn("What is your burn rate?", 1))
+        await wait(until: { h.respondCalls == 1 })
+        await a.submit(turn("And your runway?", 5))
+        let notes = Task { await a.summarise() }
+        // Every chance to go out early, which is the defect; it is not waited for otherwise.
+        await wait(until: { h.respondCalls == 2 }, seconds: 0.3)
+        #expect(h.maxConcurrent == 1, "the notes request went out beside the answer")
+
+        gate.open()
+        await notes.value
+
+        #expect(Array(h.requests.last?.prefix(4) ?? []) == [
+            "Caller: What is your burn rate?", "An answer.",
+            "Caller: And your runway?", "An answer.",
+        ], "the notes must be written from the whole conversation")
+    }
+
+    /// The cancel can land before the request exists — `perform` awaits the ledger first — and
+    /// nothing here can force that ordering, so this asserts only what must hold whichever way
+    /// the race goes: never two requests, never a failure, and the pre-empting item answered.
+    @Test("A pre-empting item that arrives before the request has left is still answered")
+    func preemptionBeforeTheRequestLeaves() async {
+        let h = Harness()
+        let a = make(h)
+
+        await a.submit(turn("Let me paste this here.", 1))
+        await a.submit(turn("The pasted problem.", 5), preempts: true)
+        await a.idle()
+
+        #expect(h.maxConcurrent == 1)
+        #expect(!h.seen.contains { $0.contains("answer_failed") })
+        #expect(h.requests.last?.last == "Caller: The pasted problem.")
+        #expect(h.seen.last { $0.contains("answer_done") }?.contains("\"key\":\"caller@5\"") == true)
     }
 }
