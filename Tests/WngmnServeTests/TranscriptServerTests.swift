@@ -691,6 +691,14 @@ struct SameOriginTests {
             #expect(status90 == 200)
             let status92 = try await post(base + "/ask", #"{"question":"x","key":"k"}"#, headers: own)
             #expect(status92 == 202)
+            // Waited for, not read at once. `/control` replies with what its handler returned,
+            // so the handler has run by the time the status is back; `/ask` sends its 202 first
+            // and calls the handler after, so the 202 can reach this test before the bump does.
+            // Read at once, this failed on CI with `applied.value → 1` after eleven green runs.
+            let deadline = ContinuousClock.now + .seconds(10)
+            while applied.value < 2, ContinuousClock.now < deadline {
+                try? await Task.sleep(for: .milliseconds(10))
+            }
             #expect(applied.value == 2, "the page's own requests were refused")
         }
     }
