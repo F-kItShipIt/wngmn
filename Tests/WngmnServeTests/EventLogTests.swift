@@ -140,14 +140,17 @@ struct EventLogTests {
     func suffixedSessionSortsLast() throws {
         let dir = scratch()
         defer { try? FileManager.default.removeItem(at: dir) }
-        let first = try EventLog(directory: dir)
-        first.append(id: 1, line: #"{"type":"question","text":"Older"}"#)
-        first.flush()
-        let second = try EventLog(directory: dir)
-        second.append(id: 1, line: #"{"type":"question","text":"Newer"}"#)
-        second.flush()
-        // Only meaningful when they actually landed in the same second.
-        try #require(second.url.lastPathComponent.contains("-02"))
+        // Named by hand rather than by the clock. Left to the clock, the two only collided
+        // when both opened inside one second, and on a loaded CI runner they did not: the
+        // test failed for want of its own premise, having checked nothing about sorting.
+        let sessions = dir.appendingPathComponent("sessions", isDirectory: true)
+        for (name, text) in [("2020-01-01T00-00-00", "Older"), ("2020-01-01T00-00-00-02", "Newer")] {
+            let log = try EventLog(directory: dir)
+            log.append(id: 1, line: #"{"type":"question","text":"\#(text)"}"#)
+            log.flush()
+            try FileManager.default.moveItem(
+                at: log.url, to: sessions.appendingPathComponent("\(name).jsonl"))
+        }
 
         let resumed = try EventLog(directory: dir, resuming: true)
         #expect(resumed.restored.first?.line.contains("Newer") == true,
