@@ -14,6 +14,9 @@ struct AutoAnswererTests {
             var reply = "An answer."
             var enabled = true
             var respondCalls = 0
+            var concurrent = 0
+            var maxConcurrent = 0
+            var requests: [[String]] = []
         }
         let state = Mutex(State())
 
@@ -24,21 +27,70 @@ struct AutoAnswererTests {
         var reply: String { state.withLock { $0.reply } }
         func setReply(_ s: String) { state.withLock { $0.reply = s } }
         var respondCalls: Int { state.withLock { $0.respondCalls } }
+        /// The most requests that were ever out at the same moment.
+        var maxConcurrent: Int { state.withLock { $0.maxConcurrent } }
+        /// What each request carried, as message texts, in the order the requests began.
+        var requests: [[String]] { state.withLock { $0.requests } }
     }
 
-    func make(_ h: Harness, gap: Double = 2.5, own: Bool = false) -> AutoAnswerer {
+    /// Holds every request at the door until it is opened, so a test can do things while a
+    /// request is in flight. Without it the scripted reply returns at once and nothing is ever
+    /// concurrent with anything.
+    final class Gate: Sendable {
+        struct State { var isOpen = false; var waiters: [CheckedContinuation<Void, Never>] = [] }
+        let state = Mutex(State())
+
+        func wait() async {
+            await withCheckedContinuation { continuation in
+                let alreadyOpen = state.withLock { s -> Bool in
+                    if s.isOpen { return true }
+                    s.waiters.append(continuation)
+                    return false
+                }
+                if alreadyOpen { continuation.resume() }
+            }
+        }
+
+        func open() {
+            let waiters = state.withLock { s -> [CheckedContinuation<Void, Never>] in
+                s.isOpen = true
+                defer { s.waiters = [] }
+                return s.waiters
+            }
+            waiters.forEach { $0.resume() }
+        }
+    }
+
+    func make(_ h: Harness, gap: Double = 2.5, own: Bool = false, gate: Gate? = nil) -> AutoAnswerer {
         AutoAnswerer(
             conversation: CallConversation(profile: Profile(text: "## Style\ns\n\n## Context\nc")),
             turnGapSeconds: gap,
             answerOwnQuestions: own,
             isEnabled: { h.enabled },
-            respond: { _, _, onText in
-                let r = h.state.withLock { s -> String in s.respondCalls += 1; return s.reply }
+            respond: { _, messages, onText in
+                let r = h.state.withLock { s -> String in
+                    s.respondCalls += 1
+                    s.concurrent += 1
+                    s.maxConcurrent = max(s.maxConcurrent, s.concurrent)
+                    s.requests.append(messages.map(\.text))
+                    return s.reply
+                }
+                await gate?.wait()
+                h.state.withLock { $0.concurrent -= 1 }
+                try Task.checkCancellation()
                 onText(r)
             },
             broadcast: { h.record($0) },
             broadcastLive: { h.record($0) }
         )
+    }
+
+    /// Polls until `condition` holds, or gives up. The same helper `TranscriptServerTests` has.
+    func wait(until condition: () -> Bool, seconds: Double = 2) async {
+        let deadline = ContinuousClock.now + .seconds(seconds)
+        while !condition(), ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
     }
 
     @Test("A caller turn is answered and pushed as a keyed answer_done frame")
@@ -168,5 +220,45 @@ struct AutoAnswererTests {
         await on.question(text: "How would I reverse a list?", t0: 1, t1: 2, speaker: .you, now: 100.0)
         _ = await on.tick(now: 103.0)
         #expect(hOn.seen.first { $0.contains("\"key\":\"you@1\"") } != nil)
+    }
+
+    /// The hole, reproduced. `question` and `tick` used to await the answer inline, and an
+    /// actor is re-entrant while it is suspended — so with the caller's answer still streaming,
+    /// the ticker could close your turn and start a second request beside the first. The
+    /// second request was then built from a ledger holding both user turns and neither reply.
+    @Test("A turn that closes while a request is in flight does not start a second request")
+    func oneRequestAtATime() async {
+        let h = Harness()
+        let gate = Gate()
+        let a = make(h, own: true, gate: gate)
+
+        // You start speaking, which closes the caller's turn; its request stops at the gate.
+        let first = Task {
+            await a.question(text: "Tell me about the round.", t0: 1, t1: 2, speaker: .caller, now: 100.0)
+            await a.question(text: "So the round closed in March, all of it.", t0: 3, t1: 5, speaker: .you, now: 101.0)
+        }
+        await wait(until: { h.respondCalls == 1 })
+
+        // Your turn goes quiet past the gap while that request is still out — the ticker's path.
+        let ticked = Mutex(false)
+        let second = Task {
+            await a.tick(now: 110.0)
+            ticked.withLock { $0 = true }
+        }
+        await wait(until: { h.maxConcurrent == 2 || ticked.withLock { $0 } })
+
+        #expect(h.maxConcurrent == 1, "a second request started beside the first")
+
+        gate.open()
+        await first.value
+        await second.value
+        await wait(until: { h.seen.filter { $0.contains("answer_done") }.count == 2 })
+
+        #expect(h.respondCalls == 2)
+        #expect(h.requests.last == [
+            "Caller: Tell me about the round.",
+            "An answer.",
+            "You: So the round closed in March, all of it.",
+        ], "the second request must be built after the first reply is in the ledger")
     }
 }
