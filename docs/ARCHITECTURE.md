@@ -666,8 +666,8 @@ Where the line is today, measured rather than hoped for:
 
 - `WngmnCore` imports nothing from Apple but `Darwin`, in one file, to list processes for
   `wngmn stop`.
-- `WngmnAsk` streams with `URLSession.bytes(for:)`, which the open-source Foundation does not
-  have, and finds a token by running the `ant` command.
+- `WngmnAsk` runs on Linux: it streams through a data delegate every Foundation has, and CI
+  tests it there against a real loopback socket.
 - `WngmnServe` has its HTTP and SSE policy in pure Swift, beside one file's worth of
   `Network.framework` listener.
 - `WngmnAudio` is two thirds orchestration that happens to construct three Apple types

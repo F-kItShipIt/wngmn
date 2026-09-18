@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// Streaming client for the Claude Messages API.
 ///
@@ -23,8 +26,19 @@ public struct ClaudeClient: Sendable {
     }
 
     public var configuration: Configuration
+
+    /// Sends a request and hands back its status and its body, a line at a time. The real one
+    /// is `HTTPLines.send`; a test hands in lines of its own.
+    typealias Transport = @Sendable (URLRequest) async throws -> (status: Int, lines: AsyncThrowingStream<String, any Error>)
+    private let transport: Transport
+
     public init(configuration: Configuration = Configuration()) {
+        self.init(configuration: configuration) { try await HTTPLines.send($0) }
+    }
+
+    init(configuration: Configuration, transport: @escaping Transport) {
         self.configuration = configuration
+        self.transport = transport
     }
 
     /// One message in a conversation. `role` is "user" or "assistant".
@@ -224,17 +238,16 @@ public struct ClaudeClient: Sendable {
 
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (bytes, response) = try await URLSession.shared.bytes(for: request)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let (status, lines) = try await transport(request)
         guard status == 200 else {
             // The body is the error JSON, not a stream. Read it so the user sees the actual
             // reason rather than a bare status code.
             var detail = ""
-            for try await line in bytes.lines where detail.count < 500 { detail += line }
+            for try await line in lines where detail.count < 500 { detail += line }
             throw Failure.http(status: status, detail: Self.errorMessage(from: detail))
         }
 
-        for try await line in bytes.lines {
+        for try await line in lines {
             guard line.hasPrefix("data:") else { continue }
             let payload = String(line.dropFirst("data:".count))
             switch AnthropicStream.event(from: payload) {
@@ -247,6 +260,9 @@ public struct ClaudeClient: Sendable {
             case nil: continue
             }
         }
+        // A stream cancelled from outside ends rather than throwing. Said out loud, so a
+        // cancelled answer is never mistaken for one that finished.
+        try Task.checkCancellation()
     }
 
     static func errorMessage(from body: String) -> String {
