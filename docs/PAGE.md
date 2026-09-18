@@ -5,7 +5,7 @@
 `--serve` puts the event stream on a page at `http://127.0.0.1:7373`. That page is what you
 look at for the whole interview — the transcript, the answer you are about to read aloud,
 and the latency the whole tool exists to keep under control. This document is how to drive
-it. The code is `Sources/WngmnServe/Page.swift`, embedded in the binary as one string; the
+it. The code is `Sources/UI/WngmnServe/Page.swift`, embedded in the binary as one string; the
 server that feeds it is `TranscriptServer.swift`.
 
 The page loads nothing from the internet. No CDN, no font, no analytics: it is served from a

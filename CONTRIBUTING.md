@@ -46,7 +46,9 @@ swift build -c release          # what you should actually test against
 ./.build/release/wngmn
 ```
 
-The five targets and what each may touch:
+The five targets and what each may touch. They live under `Sources/Engine`, `Sources/UI`,
+`Sources/Platform/Apple` and `Sources/App`, by layer; the names do not change with the
+directory ([docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#where-they-live)).
 
 | Target | Contents | Constraint |
 | --- | --- | --- |
@@ -166,7 +168,7 @@ know the history.
 
 ## Working on the embedded page
 
-The transcript page lives in `Sources/WngmnServe/Page.swift` as a Swift string literal, so
+The transcript page lives in `Sources/UI/WngmnServe/Page.swift` as a Swift string literal, so
 nothing on the way in compiles its JavaScript. A stray escape produces a page that returns
 200, renders its markup, and runs none of its script — the transcript simply never fills in.
 That has been shipped once already. Two things guard it:
