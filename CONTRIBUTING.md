@@ -26,9 +26,9 @@ mostly about the things that are not obvious from the source.
   the only alternative to transcribing silence for a whole call and finding out afterwards.
   `selftest`, `devices`, `miccheck` and `stop` do not touch the recogniser and need no model.
 * **Node**, for the embedded page's tests. Without it those tests are skipped rather than
-  failed: 76 of the 81 `@Test` declarations in `PageTests.swift` carry
+  failed: nearly nine in ten of the `@Test` declarations in `PageTests.swift` carry
   `.enabled(if: PageTests.nodeIsAvailable)`, which shells out to `node --version` and reports
-  false if that fails. The other five assert against `Page.html` as a Swift string — that an
+  false if that fails. The rest assert against `Page.html` as a Swift string — that an
   element id is present, that every heading level has a style — and need nothing. Everything
   else still runs.
 
@@ -50,11 +50,11 @@ The five targets and what each may touch:
 
 | Target | Contents | Constraint |
 | --- | --- | --- |
-| `WngmnCore` | Endpointer, question assembler, text normaliser, ring buffer, options, events | Deliberately free of Core Audio and Speech, so its tests run in any terminal |
-| `WngmnAudio` | Process tap, clocks, capture timeline, transcriber, pipeline, offline runner | The only target that touches the system |
+| `WngmnCore` | Endpointer, question assembler, turn batcher, answer queue, text normaliser, ring buffer, options, events, and what a screenshot decides without a screen | Deliberately free of Core Audio and Speech, so its tests run in any terminal |
+| `WngmnAudio` | Process tap, clocks, capture timeline, transcriber, pipeline, offline runner | The only target that touches the audio system |
 | `WngmnServe` | HTTP/1.1 + SSE listener and the embedded page | Depends on `WngmnCore` only — it renders events, it does not know where they came from |
 | `WngmnAsk` | Claude credentials, prompt assembly, streaming | Kept apart from `WngmnServe` on purpose, so the Claude dependency stays on one side of that line |
-| `wngmn` | The executable: `run`, `selftest`, `devices`, `offline`, `miccheck`, `stop`, `install-model` | Wiring and command dispatch |
+| `wngmn` | The executable: `run`, `selftest`, `devices`, `offline`, `miccheck`, `stop`, `shot`, `install-model` | Wiring and command dispatch. It has no test target, so anything it would have to *decide* goes in `WngmnCore` where it can — `shot`'s URL, what each reply means, its argument lists, its clock and its size limits all live there. What is left here, untested, is the process spawn, the network call, the order the capture's steps run in, and the wording of its failures |
 
 If you find yourself importing AVFoundation or Speech into `WngmnCore`, that is the signal
 that the logic and the system call have not been separated yet, not that the rule is wrong.
@@ -103,7 +103,9 @@ swift test --filter OfflinePipelineTests # offline replay; needs the en-US model
    only tier that exercises TCC, device changes mid-call, and genuine conversational speech,
    and it is not automatable. If you change anything in the tap, the aggregate device, the
    keepalive IOProc or the route watcher, rehearse it and say so in the pull request — the
-   unit tiers cannot tell you that a tap stopped clocking.
+   unit tiers cannot tell you that a tap stopped clocking. `wngmn shot` is in this tier too:
+   taking the picture needs a display, a Screen Recording grant and, for `--region`, a person
+   to drag, so the decisions on either side of the capture are unit-tested and the capture, and the sequence around it in `Shot.swift`, are not.
 
 ### Permission, and why `selftest` plays a tone
 
@@ -202,7 +204,7 @@ Four steps:
 * **Build** — `swift build -c release`. There are no dependencies to resolve, so this is a
   cold compile of our own code and nothing else, and warnings are errors, so a warning fails
   the job.
-* **Node present** — `node --version`, and the job fails if it is missing. 76 of the 81
+* **Node present** — `node --version`, and the job fails if it is missing. Nearly nine in ten of the
   tests in `PageTests.swift` are gated on `.enabled(if: PageTests.nodeIsAvailable)`, which
   shells out to exactly that, and a skipped test is indistinguishable from a passing one in
   the summary line. Failing loudly beats a green tick that checked less than it looks like.

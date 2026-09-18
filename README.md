@@ -157,6 +157,15 @@ Think harder, or think elsewhere. Ships as `claude-opus-5` at `low`.
 wngmn --serve --ask-model claude-opus-5 --ask-effort medium --profile me.md
 ```
 
+They pasted the problem into a doc instead of saying it. Press a key: the wngmn that is already running takes a picture of your screen and answers it, nobody presses Ask, and the picture stays in the conversation — so when they then *say* "can you do that in place?", it knows what "that" is.
+
+```sh
+wngmn shot             # the whole screen, at once
+wngmn shot --region    # drag a rectangle; Space for a window, Esc to cancel
+```
+
+wngmn has no hotkey of its own, on purpose: bind those two to keys. In the Shortcuts app, new shortcut → **Run Shell Script** → the full path to wngmn, then `shot --region` → the ⓘ panel → **Add Keyboard Shortcut**. Shortcuts does not read your shell's `PATH`, so ask your terminal where it is — `command -v wngmn` — rather than copying anyone else's: `/opt/homebrew/bin/wngmn` on an Apple Silicon Mac with Homebrew, `/usr/local/bin` or `~/.local/bin` elsewhere. Raycast, Alfred and skhd do the same in a line. Try both once before the call: the first shot is when macOS asks for Screen Recording.
+
 All of it, at once, for the interview that matters.
 
 ```sh
@@ -230,12 +239,13 @@ Checked in this order: `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, then `ant au
 - `--ask-effort low|medium|high|xhigh|max`. Starts at `low`. A brilliant answer that arrives after you've started talking is worth nothing.
 - `--ask-model`, starting at `claude-opus-5`.
 - Each Ask ships the question, as many as six before it, and your profile to api.anthropic.com.
+- A `wngmn shot` ships a picture — shrunk to 2576 px on its long edge, which is all the model reads — and the conversation so far. Around 1,800 tokens for a dragged region, 4,800 for a whole 4K screen.
 
 ## How it works
 
 ```
 Zoom / Chrome ─tap─▶ endpointer ─▶ SpeechAnalyzer ─▶ page ─Ask─▶ api.anthropic.com
-  (its audio)       (RMS, 250 ms)   (on-device)      (phone)     (text, on click)
+  (its audio)       (RMS, 250 ms)   (on-device)      (phone)     (text on a click; a picture on a key)
 ```
 
 The long version lives in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
@@ -270,6 +280,7 @@ The complete list of things that leave your Mac:
 - Ask: the question, the recent ones, your profile. Off to api.anthropic.com when you click.
 - **prefetch**, if you switch it on: every caller question goes the moment it lands, no click. Their words, not just yours.
 - **auto**, if you switch it on: every caller turn goes as it ends, no click, and each answer builds on the ones before it in a running conversation with Claude. Off by default; the loudest change to this list, so it is the one you turn on deliberately.
+- **shot**, when you press the key you bound to it: a picture of your screen — the whole display, or the region you drag — goes to api.anthropic.com with the conversation so far, and stays in that conversation until wngmn exits, so with **auto** on it goes again with every later turn. Only from this Mac: the route that takes the picture refuses the network even under `--listen`, and refuses browsers outright. It does answer anything *else* running as you, which is what your key is — and what any other local process could be; [SECURITY.md](SECURITY.md) says what that means. wngmn keeps the image in memory. The file is deleted as soon as it has been read, and the session log records that a shot was taken and how big, never the picture — though the *answer* is logged like any other, and an answer about a screenshot can quote it. Whatever else was on the screen goes too; drag a region if that matters.
 - `install-model`: a download from Apple.
 - Transcript: your local disk, and only while `--serve` is up. `--no-log` turns it off.
 - `--listen`: the page goes on your LAN, gated by the URL token.
@@ -290,7 +301,7 @@ wngmn is intentionally boring in a few places. There is no framework where a few
 
 If you find a bug, open an issue. If you know why the audio pipeline behaves differently on a machine it has absolutely no reason to behave differently on, definitely open an issue. Pull requests are welcome. Keep changes focused, keep dependencies justified, and try not to turn the tiny HTTP server into Kubernetes.
 
-`swift test` runs 417 tests; five suites want the speech model first. Start with [CONTRIBUTING.md](CONTRIBUTING.md), then work through [permissions](docs/PERMISSIONS.md), [the page](docs/PAGE.md), [tuning](docs/TUNING.md), [architecture](docs/ARCHITECTURE.md) and [the GIFs](docs/tapes/README.md). [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) is in force. Found a security hole? GitHub private vulnerability reporting, details in [SECURITY.md](SECURITY.md).
+`swift test` runs 541 tests; five suites want the speech model first. Start with [CONTRIBUTING.md](CONTRIBUTING.md), then work through [permissions](docs/PERMISSIONS.md), [the page](docs/PAGE.md), [tuning](docs/TUNING.md), [architecture](docs/ARCHITECTURE.md) and [the GIFs](docs/tapes/README.md). [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) is in force. Found a security hole? GitHub private vulnerability reporting, details in [SECURITY.md](SECURITY.md).
 
 ## The name
 

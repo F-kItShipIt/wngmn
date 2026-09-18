@@ -28,6 +28,15 @@ public struct TokenStore: Sendable {
 
     public var url: URL { directory.appendingPathComponent("token") }
 
+    /// The stored token, or nil if there is none. For a client — `wngmn shot` — that has to
+    /// find the token a running server was started with: `loadOrCreate` would mint and persist
+    /// a new one as a side effect of taking a screenshot.
+    public func load() -> String? {
+        guard let existing = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        let trimmed = existing.trimmingCharacters(in: .whitespacesAndNewlines)
+        return AccessToken.isPlausibleStoredToken(trimmed) ? trimmed : nil
+    }
+
     /// The stored token, creating and persisting one on first use.
     public func loadOrCreate() throws -> String {
         if let existing = try? String(contentsOf: url, encoding: .utf8) {

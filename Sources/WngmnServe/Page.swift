@@ -544,18 +544,33 @@ function isYou(q) { return q.speaker === "you"; }
 // Identifies a question across devices. `t0` is the start of the speech and is stable
 // across revisions — all three lines of a revised question carry the same one — and the
 // speaker separates the two sources. No schema change needed: both are already on the wire.
-function questionKey(q) { return (q.speaker || "caller") + "@" + q.t0; }
+//
+// A screenshot's row keeps the key its frame carried rather than rebuilding one. The frame
+// already spells it, and a second spelling of one number is how an answer once failed to
+// find its row.
+function questionKey(q) { return q.key || ((q.speaker || "caller") + "@" + q.t0); }
+
+// A screenshot: the one row that did not come from the recogniser. It has no latency, no
+// speaker who is the caller or you, and it is never asked from here — it was asked by the
+// keypress that took it.
+function isShot(q) { return q.kind === "shot"; }
+
+function speakerLabel(q) {
+  return isShot(q) ? "Screen" : q.speaker === "you" ? "You" : "Caller";
+}
 
 function questionNode(q) {
   const el = document.createElement("div");
   el.className = "q" + (isYou(q) ? " you" : "");
   const tags = [];
-  tags.push(`<span class="tag${overBudget(q) ? " slow" : ""}">${q.ms} ms</span>`);
-  if (q.volatile) tags.push('<span class="tag vol">⚠ volatile — wording less reliable</span>');
-  tags.push('<button class="ask">Ask</button>');
+  if (!isShot(q)) {
+    tags.push(`<span class="tag${overBudget(q) ? " slow" : ""}">${q.ms} ms</span>`);
+    if (q.volatile) tags.push('<span class="tag vol">⚠ volatile — wording less reliable</span>');
+    tags.push('<button class="ask">Ask</button>');
+  }
   // The gutter already carries the timestamp; the speaker rides with it rather than adding
   // another column, so a one-source transcript looks exactly as it did.
-  const who = q.speaker ? `<div class="who">${esc(q.speaker === "you" ? "You" : "Caller")}</div>` : "";
+  const who = q.speaker ? `<div class="who">${esc(speakerLabel(q))}</div>` : "";
   el.innerHTML =
     `<div class="t">${mmss(q.t0)}${who}</div>` +
     `<div class="body"><div class="text">${esc(q.text)}</div>` +
@@ -571,8 +586,13 @@ function questionNode(q) {
 // `revises` supersedes the most recent question FROM THE SAME SPEAKER. Pure, so the
 // two-source rule can be tested without a DOM. A falsy speaker means single-source output,
 // where the target is simply the last row — exactly the behaviour before the mic existed.
+//
+// A screenshot is never the target. With a speaker on the wire it could not be — "screen" is
+// neither — but single-source output carries no speaker at all, and "the last row" would
+// then be the shot: replaced by a line of speech, and, being asked, asked again as one.
 function lastIndexForSpeaker(list, speaker) {
   for (let i = list.length - 1; i >= 0; i--) {
+    if (isShot(list[i])) continue;
     if (!speaker || list[i].speaker === speaker) return i;
   }
   return -1;
@@ -608,8 +628,15 @@ function bumpUnseen(current, transcriptVisible) {
 /// disappeared the moment the line was answered would leave the text stranded with no way
 /// back to the answer it already has. `ask` refuses to spend a second call on a question
 /// that has one, so pointing at it is safe in both states — only the label changes.
+//
+// The newest thing that was *said*. A screenshot row is last in the list for as long as nobody
+// speaks, and the caption is a line of speech with a button that asks it: showing a shot's
+// label there read as something somebody had said, over a button naming a different row.
 function peekTarget(list) {
-  return list[list.length - 1] || null;
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (!isShot(list[i])) return list[i];
+  }
+  return null;
 }
 
 // Speech in progress, if any. Held rather than read back off the element because the
@@ -626,7 +653,7 @@ function renderCaption() {
     live.innerHTML = esc(partialText) + '<span class="cursor"></span>';
     return;
   }
-  const last = questions[questions.length - 1];
+  const last = peekTarget(questions);
   live.innerHTML = last
     ? `<span class="settled">${esc(last.text)}</span>`
     : '<span class="cursor"></span>';
@@ -996,7 +1023,7 @@ function putOnStage(q) {
   const head = $("stageHead");
   head.hidden = false;
   head.innerHTML =
-    (q.speaker ? `<div class="who">${esc(q.speaker === "you" ? "You" : "Caller")}</div>` : "")
+    (q.speaker ? `<div class="who">${esc(speakerLabel(q))}</div>` : "")
     + `<div class="q-text">${esc(q.text)}</div>`;
   markRows();
   renderAnswer(q);
@@ -1357,6 +1384,15 @@ function copyToClipboard(button, text) {
   );
 }
 
+// What a manual Ask sends as context: the six lines before it. Only what came before — a
+// later one is not context for it — and only what was said: a manual Ask does not see a
+// screenshot, so it must not be handed the screenshot's label as though someone had spoken it.
+function recentBefore(list, q) {
+  const index = list.indexOf(q);
+  return list.slice(0, index < 0 ? list.length : index)
+    .filter(x => !isShot(x)).slice(-6).map(x => x.text);
+}
+
 // Fires the request and returns. The answer is rendered from `/events` like everything
 // else, so a laptop and a phone show the same thing because they are running the same code
 // path, not because two paths were kept in step.
@@ -1370,9 +1406,7 @@ async function askFor(q) {
   renderAnswer(q);
 
   // Only what came before this question — a later one is not context for it.
-  const index = questions.indexOf(q);
-  const recent = questions.slice(0, index < 0 ? questions.length : index)
-    .slice(-6).map(x => x.text);
+  const recent = recentBefore(questions, q);
 
   try {
     const res = await fetch("/ask" + window.location.search, {
@@ -1484,7 +1518,7 @@ function addQuestion(e) {
   // Not while a remote position is being applied: otherwise a new question yanks every
   // screen back to the bottom the instant someone scrolls up on another device.
   if (atBottom && Date.now() >= applyingRemoteScroll) lines.scrollTop = lines.scrollHeight;
-  $("count").textContent = questions.length;
+  $("count").textContent = spokenCount();
   unseen = bumpUnseen(unseen, transcriptVisible());
   renderTabs();
   renderPeek();
@@ -1498,7 +1532,9 @@ function addQuestion(e) {
 function drawChart() {
   const svg = $("chart");
   // The caller's questions only: the chart is the budget, and the budget is theirs.
-  const data = questions.filter(q => !isYou(q)).slice(-40);
+  // And only what was spoken. A row with no `ms` does not add an odd bar: `worst` comes out
+  // undefined, `max` NaN, and every bar in the chart is drawn at NaN.
+  const data = questions.filter(q => !isYou(q) && !isShot(q)).slice(-40);
   const W = svg.clientWidth || 300, H = 132, padB = 16, padT = 8;
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   if (!data.length) { svg.innerHTML = ""; return; }
@@ -1592,6 +1628,36 @@ function setState(text, cls) {
   $("dot").className = "dot" + (cls ? " " + cls : "");
 }
 
+function spokenCount() { return questions.filter(q => !isShot(q)).length; }
+
+// A screenshot was taken. Its own function rather than a branch of `addQuestion`, which
+// builds its row from a fixed list of fields, prefetches, and resolves revisions — none of
+// which a shot wants.
+//
+// The row is born asked, with no answer. That is the only way this page shows "Asking…" —
+// it has no pending state of its own — and it is what keeps every path that can ask a row
+// (Enter, the caption's button, the stage's Ask) from posting the label to /ask as speech.
+function addShot(e) {
+  // Replay lands on rows the page already has, and must leave them, and the stage, alone.
+  if (questions.some(x => questionKey(x) === e.key)) return;
+  const atBottom = lines.scrollHeight - lines.scrollTop - lines.clientHeight < 60;
+  const size = e.w && e.h ? ` · ${e.w}×${e.h}` : "";
+  const q = {
+    kind: "shot", key: e.key, speaker: "screen", t0: e.t, t1: e.t,
+    text: `Screenshot · ${e.mode}${size}`, asked: true, answer: "",
+  };
+  const empty = lines.querySelector(".empty");
+  if (empty) empty.remove();
+  q.el = questionNode(q);
+  lines.appendChild(q.el);
+  questions.push(q);
+  if (atBottom && Date.now() >= applyingRemoteScroll) lines.scrollTop = lines.scrollHeight;
+  unseen = bumpUnseen(unseen, transcriptVisible());
+  renderTabs();
+  // Whatever was there. The shutter is silenced, so this is the only sign the key worked.
+  activate(q);
+}
+
 /// Applies one event from the stream. Apart from the socket so a test can drive it.
 function handleEvent(e) {
     if (typeof e.t  === "number") streamT = e.t;
@@ -1620,6 +1686,11 @@ function handleEvent(e) {
         // `renderCaption` then shows them there rather than leaving the caption blank.
         partialText = "";
         addQuestion(e);
+        noteActivity();
+        break;
+      case "shot":
+        // `partialText` is left alone: somebody may be mid-sentence.
+        addShot(e);
         noteActivity();
         break;
       case "scroll":
@@ -1668,9 +1739,10 @@ function connect() {
   };
 }
 // --- end-of-call notes ---------------------------------------------------
-// A page asks whether the call is over after a stretch of silence, but only once auto has
-// actually run — a page that never turned auto on has no ledger to summarise and should not
-// be nagged. `No` snoozes until the next question resets the idle clock.
+// A page asks whether the call is over after a stretch of silence, but only once something
+// has been sent — an auto answer, or a screenshot, either of which arrives with an `auto`
+// stats frame. A page that sent nothing has no ledger to summarise and should not be nagged.
+// `No` snoozes until the next question resets the idle clock.
 const CALL_IDLE_MS = 20000;
 let lastActivity = Date.now();
 let autoUsed = false;
