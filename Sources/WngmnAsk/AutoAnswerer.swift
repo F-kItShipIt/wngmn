@@ -124,6 +124,15 @@ public actor AutoAnswerer {
         handle(queue.enqueue(.shot(shot), preempts: true))
     }
 
+    /// A key was pressed and no picture came of it — no Screen Recording grant, or an image
+    /// too large to send. It is still given a row, with the reason on it, because a warning
+    /// alone lands in the side panel and a phone does not show the side panel at all.
+    public func shotFailed(t: Double, mode: ShotMode, detail: String) {
+        let blank = Shot(base64: "", t: t, mode: mode, width: 0, height: 0, byteCount: 0)
+        broadcast(Self.shotFrame(blank))
+        broadcast(Self.answerFailedFrame(key: blank.key, detail: detail))
+    }
+
     /// Suspends until nothing is in flight and nothing waits. A loop, because a drain that ends
     /// can be followed at once by another.
     func idle() async {
@@ -174,17 +183,26 @@ public actor AutoAnswerer {
     /// ones are what was said on the way to it, and are context.
     private func perform(id: Int, batch: [ConversationItem]) async {
         guard let last = batch.last else { return }
-        let key = Self.key(for: last)
         let shotKeys = batch.compactMap { item -> String? in
             if case let .shot(shot) = item { return shot.key }
             return nil
         }
-        let answersAShot = if case .shot = last { true } else { false }
+        // A batch that holds a screenshot is answered under the screenshot, and the last one
+        // if there are several — not under whatever closed last. A spoken turn can slip in
+        // between the keypress and the send; the answer is still about the picture, and the
+        // picture's row is the one on the stage saying "Asking…".
+        let key = shotKeys.last ?? Self.key(for: last)
+        let answersAShot = !shotKeys.isEmpty
         let (system, messages) = await conversation.startBatch(batch)
+        // Every shot in the batch but the last shares the last one's answer.
+        settleOvertaken(Array(shotKeys.dropLast()))
         // A cancel can land while the ledger was being awaited, before any request exists. The
         // turns are committed — they were said — but there is nothing to send, and launching a
         // request only to cancel it would still be counted, and shown, as a call.
-        if cancelRequested.contains(id) { return }
+        if cancelRequested.contains(id) {
+            settleOvertaken(shotKeys.suffix(1))
+            return
+        }
         stats.calls += 1
         broadcastLive(Self.statsFrame(stats))
 
@@ -197,7 +215,10 @@ public actor AutoAnswerer {
 
         // Cancelled: the turns stay in the ledger as context and nothing is shown — the shape a
         // NONE leaves. The call was still made, so it stays counted.
-        if cancelRequested.contains(id) { return }
+        if cancelRequested.contains(id) {
+            settleOvertaken(shotKeys.suffix(1))
+            return
+        }
 
         switch result {
         case .success:
@@ -243,7 +264,7 @@ public actor AutoAnswerer {
         await idle()
         guard await !conversation.isEmpty else {
             broadcast(Self.summaryFailedFrame(
-                detail: "no conversation yet — turn auto on during the call to build notes"))
+                detail: "no conversation yet — notes are written from what auto answered and from screenshots"))
             return
         }
         broadcast(Self.summaryPendingFrame())
@@ -255,6 +276,17 @@ public actor AutoAnswerer {
                 text: accumulated.value.trimmingCharacters(in: .whitespacesAndNewlines)))
         } catch {
             broadcast(Self.summaryFailedFrame(detail: "\(error)"))
+        }
+    }
+
+    /// Ends "Asking…" on screenshots that will get no answer of their own. On the page that
+    /// text is not a state: it is what any asked row shows until something arrives under its
+    /// key, and a cancelled request sends nothing. Only a newer screenshot pre-empts, so a
+    /// cancelled one always has a later one whose answer covers it — the picture is still in
+    /// the conversation that answer is written from.
+    private func settleOvertaken(_ keys: some Sequence<String>) {
+        for key in keys {
+            broadcast(Self.answerDoneFrame(key: key, text: "_Answered with the screenshot after this one._"))
         }
     }
 

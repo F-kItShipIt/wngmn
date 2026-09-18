@@ -598,4 +598,82 @@ struct AutoAnswererTests {
         #expect(failed?.contains("screen@5") == true)
         #expect(!h.seen.contains { $0.contains("answer_done") })
     }
+
+    /// "Asking…" on the page is not a state of its own: it is what any asked row shows until
+    /// something arrives under its key. A cancelled request sends nothing, so without this a
+    /// screenshot overtaken by another would say "Asking…" for the rest of the call.
+    @Test("A screenshot overtaken by another is told so, rather than left asking")
+    func overtakenShotIsSettled() async {
+        let h = Harness(); h.setReply("Both halves: a two-pointer merge.")
+        let gate = Gate()
+        let a = make(h, gate: gate)
+
+        await a.shot(shot(5))
+        await wait(until: { h.respondCalls == 1 })
+        await a.shot(shot(9))
+        gate.open()
+        await a.idle()
+
+        let first = h.seen.first { $0.contains("answer_done") && $0.contains("\"key\":\"screen@5\"") }
+        #expect(first?.contains("Answered with the screenshot after this one") == true)
+        let second = h.seen.first { $0.contains("answer_done") && $0.contains("\"key\":\"screen@9\"") }
+        #expect(second?.contains("two-pointer merge") == true)
+        #expect(h.pictures.last == 2, "the overtaken picture is still in the conversation")
+    }
+
+    @Test("Two screenshots sent together are answered under the later one")
+    func twoShotsInOneBatch() async {
+        let h = Harness(); h.setReply("Read together, it is one problem.")
+        let gate = Gate()
+        let a = make(h, gate: gate)
+
+        await a.submit(turn("Here, it is in two parts.", 1))
+        await wait(until: { h.respondCalls == 1 })
+        await a.shot(shot(5))
+        await a.shot(shot(9))
+        gate.open()
+        await a.idle()
+
+        #expect(h.respondCalls == 2, "one request was cancelled, one carried both pictures")
+        #expect(h.seen.contains { $0.contains("\"key\":\"screen@5\"") && $0.contains("Answered with the screenshot after this one") })
+        #expect(h.seen.contains { $0.contains("\"key\":\"screen@9\"") && $0.contains("one problem") })
+    }
+
+    /// A spoken turn can close between the keypress and the request. The answer is about the
+    /// picture, and the picture's row is the one on the stage saying "Asking…".
+    @Test("An answer to a batch holding a screenshot lands on the screenshot, whatever was said after it")
+    func answerLandsOnTheShot() async {
+        let h = Harness(); h.setReply("It is a merge of two sorted arrays.")
+        let gate = Gate()
+        let a = make(h, gate: gate)
+
+        await a.submit(turn("Let me paste this here.", 1))
+        await wait(until: { h.respondCalls == 1 })
+        await a.shot(shot(5))
+        await a.submit(turn("Take your time with it.", 7))
+        gate.open()
+        await a.idle()
+
+        #expect(h.requests.last?.suffix(2) == [
+            "Screen: a screenshot I just took of my screen.", "Caller: Take your time with it.",
+        ])
+        let done = h.seen.filter { $0.contains("answer_done") }
+        #expect(done.count == 1)
+        #expect(done.first?.contains("\"key\":\"screen@5\"") == true)
+    }
+
+    /// A shot that could not be taken still has to show up where the reader is looking. A
+    /// warning alone lands in the side panel, which a phone does not show at all.
+    @Test("A screenshot that could not be taken is a row with its reason, not only a warning")
+    func failedCaptureIsARow() async {
+        let h = Harness()
+        let a = make(h)
+        await a.shotFailed(t: 12.5, mode: .screen, detail: "Screen Recording is not granted")
+
+        #expect(h.seen.first == #"{"type":"shot","key":"screen@12.5","t":12.5,"mode":"screen","w":0,"h":0,"bytes":0}"#)
+        #expect(h.seen.last?.contains("answer_failed") == true)
+        #expect(h.seen.last?.contains("screen@12.5") == true)
+        #expect(h.seen.last?.contains("Screen Recording is not granted") == true)
+        #expect(h.respondCalls == 0)
+    }
 }
