@@ -257,10 +257,11 @@ Work through this well before any interview, not on the day.
    combination: nothing in that route can carry your own voice back into the output stream
    the tap reads. Set the microphone explicitly in the conferencing app too — not "Same as
    System" — because a virtual audio device installed by some other application is a common
-   default and may be capturing nothing. With `--mic`, use wired headphones instead, so your
-   microphone does not also hear the caller; wngmn warns at startup if the output device does
-   not look like headphones. Either way, avoid a Bluetooth headset whose microphone will be
-   in use.
+   default and may be capturing nothing. With `--mic` the same route works: the microphone
+   hears the caller through the speakers, so wngmn measures whether it can and, if so,
+   ignores it while the other side is talking ([TUNING.md](TUNING.md#the-microphone-endpointer)).
+   What you say over them is lost with the echo; wired headphones keep it. Either way, avoid
+   a Bluetooth headset whose microphone will be in use.
 
 2. **Grant System Audio Recording.** System Settings → Privacy & Security → Screen & System
    Audio Recording → enable your terminal app. If it is not listed, run wngmn once from it

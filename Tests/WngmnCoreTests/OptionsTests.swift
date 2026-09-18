@@ -149,6 +149,15 @@ struct MicOptionsTests {
         #expect(throws: Options.ParseError.self) { try Options.parse(["--mic-open-db"]) }
     }
 
+    /// Built-in speakers and the built-in mic are what a laptop has, and the person who has
+    /// not plugged anything in is the person least likely to know a flag exists.
+    @Test("The mic is protected from the speakers unless that is turned off")
+    func echoGateDefaultsOn() throws {
+        #expect(try Options.parse(["--mic"]).echoGate)
+        #expect(try !Options.parse(["--mic", "--no-echo-gate"]).echoGate)
+        #expect(Options.usage.contains("--no-echo-gate"))
+    }
+
     /// The other endpointer knobs still reach the tap only, so tuning one cannot silently
     /// detune the other.
     @Test("--open-db tunes the tap without touching the mic")

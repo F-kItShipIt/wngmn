@@ -46,15 +46,16 @@ public struct Options: Sendable, Equatable {
     public var termsPath: String?
     public var inputPath: String?
     public var endpointer = EndpointerConfig()
-    /// Capture the local microphone as a second source, so the transcript carries both
-    /// halves of the conversation rather than only the caller's.
-    ///
-    /// Assumes headphones. On speakers the mic also hears the caller, and the same sentence
-    /// is transcribed twice under both labels; `Pipeline` warns at startup if the default
-    /// output looks like a speaker device.
     /// Begin without listening to the caller, so capture starts only when asked for.
     public var startPaused = false
+    /// Capture the local microphone as a second source, so the transcript carries both
+    /// halves of the conversation rather than only the caller's.
     public var mic = false
+    /// Ignore the mic while it is only hearing the call come out of a speaker. On by default
+    /// because built-in speakers and the built-in mic are what a laptop has: without it every
+    /// sentence the caller speaks is transcribed twice, once under each label. It measures
+    /// the route rather than assuming it, so on headphones it stands aside.
+    public var echoGate = true
     /// Device UID to capture from. Nil uses the default input.
     public var micDeviceUID: String?
     /// The mic's own endpointer. Your mouth is inches from the microphone while the caller
@@ -244,6 +245,7 @@ public struct Options: Sendable, Equatable {
                 o.shotMode = .region
             case "--no-auto": o.autoAnswer = false
             case "--mic": o.mic = true
+            case "--no-echo-gate": o.echoGate = false
             // Naming a device is an unambiguous request to capture from it.
             case "--mic-device": o.micDeviceUID = try value(arg); o.mic = true
             case "--mic-open-db": o.micEndpointer.openThresholdDB = try number(arg)
@@ -458,8 +460,13 @@ public struct Options: Sendable, Equatable {
                              shorter than the tap's 700: consecutive sentences of your own
                              should be separate lines). 0 never stitches.
 
-      Assumes headphones. On speakers the mic hears the caller too and the same sentence
-      is transcribed twice, once under each label.
+      --no-echo-gate         listen to the mic all the time, even while it can hear the
+                             call coming out of the speakers
+
+      Works on speakers. There the mic hears the caller as well as you, so wngmn measures
+      whether the mic is carrying a copy of the call, and if so ignores it while the other
+      side is talking: the tap already has their half. What you say over them is lost; on
+      headphones nothing is.
       --no-fast-results      drop .fastResults; slower per result, better on jargon
 
     OUTPUT

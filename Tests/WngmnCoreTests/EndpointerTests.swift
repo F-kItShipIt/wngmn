@@ -149,6 +149,24 @@ struct EndpointerTests {
         #expect(e.noiseFloor < -45)
     }
 
+    /// The mic's audio is sometimes replaced with zeros (`EchoGate`). Learned as a quiet
+    /// room, a quarter of a second of that drags the floor to −100, the raised threshold of a
+    /// noisy room is gone, and the first thing back through the gate opens a detector it would
+    /// not have opened before.
+    @Test("A microphone's silenced stretches do not teach it that the room is quiet")
+    func digitalSilenceIsNotARoom() {
+        var noisy = makeEndpointer { $0.floorIgnoresDigitalSilence = true }
+        _ = noisy.push(TestSignal.frames(seconds: 3.0, dB: -40), startTime: 0, sampleRate: TestSignal.rate)
+        let learned = noisy.noiseFloor
+        _ = noisy.push(TestSignal.silence(seconds: 2.0), startTime: 3.0, sampleRate: TestSignal.rate)
+        #expect(abs(noisy.noiseFloor - learned) < 0.5)
+
+        var tap = makeEndpointer()              // the tap's digital silence really is a quiet far end
+        _ = tap.push(TestSignal.frames(seconds: 3.0, dB: -40), startTime: 0, sampleRate: TestSignal.rate)
+        _ = tap.push(TestSignal.silence(seconds: 2.0), startTime: 3.0, sampleRate: TestSignal.rate)
+        #expect(tap.noiseFloor < learned - 20)
+    }
+
     @Test("Ragged buffer sizes produce the same boundaries as one contiguous push")
     func raggedBuffersMatchContiguous() {
         let audio = TestSignal.envelope([(0.9, -20), (0.6, nil), (0.9, -20)])

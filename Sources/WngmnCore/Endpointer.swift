@@ -34,6 +34,13 @@ public struct EndpointerConfig: Sendable, Equatable {
     /// of adaptation covers a noisy room; beyond that the absolute threshold is the safer
     /// authority.
     public var maximumAdaptationDB: Double = 12
+    /// Leave digital silence out of the noise floor. For a microphone whose audio is sometimes
+    /// replaced with zeros (see `EchoGate`): a silenced buffer is not a quiet room, and
+    /// learned as one it drags the floor to −100 in a quarter of a second — after which a
+    /// noisy room's raised threshold is gone, and the first thing to come back through the
+    /// gate opens a detector it would not have opened before. Off for the tap, where digital
+    /// silence is what a quiet far end really is.
+    public var floorIgnoresDigitalSilence = false
     /// Speech resuming within this long after an endpoint is treated as a continuation of
     /// the same question rather than as a new one.
     ///
@@ -340,6 +347,7 @@ public struct Endpointer: Sendable {
     /// stray loud window cannot desensitise the detector.
     private mutating func trackNoiseFloor(_ level: Double) {
         guard config.adaptNoiseFloor, level.isFinite else { return }
+        if config.floorIgnoresDigitalSilence, level <= -119 { return }
         let alpha = level < noiseFloorDB ? 0.25 : 0.002
         noiseFloorDB += (level - noiseFloorDB) * alpha
         noiseFloorDB = min(max(noiseFloorDB, -100), -20)

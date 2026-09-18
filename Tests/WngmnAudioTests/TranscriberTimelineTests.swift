@@ -115,4 +115,42 @@ struct MicIdleAdvanceTests {
     func respectsTheAllowance() {
         #expect(MicSource.idleAdvanceTarget(now: 10, cursor: 9.97, allowance: 0.06, threshold: 0.025) == nil)
     }
+
+    /// With the call on speakers a mic buffer waits in its ring until the tap has reported on
+    /// the same stretch of time. It is audio, not idleness: walked past, it would be fed
+    /// behind the recogniser's cursor, and every timestamp after it would sit late by however
+    /// long it waited.
+    @Test("A buffer waiting in the ring is not silence to be filled")
+    func aWaitingBufferIsNotIdleness() {
+        #expect(MicSource.idleAdvanceTarget(
+            now: 10, cursor: 9, allowance: 0.06, threshold: 0.025, bufferWaiting: true) == nil)
+        #expect(MicSource.idleAdvanceTarget(
+            now: 10, cursor: 9, allowance: 0.06, threshold: 0.025, bufferWaiting: false) != nil)
+    }
+}
+
+/// With the call on speakers the mic judges each buffer against what the tap heard at that
+/// moment, so a buffer the tap has not yet reported on waits in the ring. Pure, so the rule —
+/// and above all that it gives up — can be asserted without a microphone or a tap.
+@Suite("Mic waits for the tap")
+struct MicWaitsForTheTapTests {
+    @Test("A buffer the tap has not reported on yet is left in the ring")
+    func waits() {
+        #expect(MicSource.shouldWaitForTheTap(segmentEnd: 10.00, knownThrough: 9.98, now: 10.01, limit: 0.3))
+    }
+
+    @Test("Once the tap has reported past it, by sound or by silence, it is taken")
+    func proceeds() {
+        #expect(!MicSource.shouldWaitForTheTap(segmentEnd: 10.00, knownThrough: 10.00, now: 10.01, limit: 0.3))
+        #expect(!MicSource.shouldWaitForTheTap(segmentEnd: 10.00, knownThrough: 10.40, now: 10.01, limit: 0.3))
+    }
+
+    /// A tap that is rebuilding, or never started, reports nothing. The mic is the half that
+    /// still works then, and it must not stop with it.
+    @Test("A tap that never reports holds the mic back by the limit and no longer")
+    func givesUp() {
+        #expect(MicSource.shouldWaitForTheTap(segmentEnd: 10, knownThrough: -.infinity, now: 10.99, limit: 1))
+        #expect(!MicSource.shouldWaitForTheTap(segmentEnd: 10, knownThrough: -.infinity, now: 11.0, limit: 1))
+        #expect(!MicSource.shouldWaitForTheTap(segmentEnd: 10, knownThrough: 3, now: 60, limit: 1))
+    }
 }

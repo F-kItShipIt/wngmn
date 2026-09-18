@@ -50,7 +50,8 @@ They do not know about each other. The executable is the only place the three me
 
 `Endpointer`, `QuestionAssembler`, `AudioRingBuffer`, `Event`/`EventEncoder`,
 `TextNormalizer`, `TermList`, `Profile`/`ProfileSource`, `Options`, `CaptureControl`,
-`MicCalibration`, `RunningProcesses`, `TurnBatcher`, `AnswerQueue`, `ShotCapture`.
+`MicCalibration`, `RunningProcesses`, `TurnBatcher`, `AnswerQueue`, `ShotCapture`,
+`EchoGate`/`FarEndActivity`.
 
 Deliberately free of Core Audio and `Speech`. The reason is testability under the permission
 model: System Audio Recording is granted to a *parent process*, so a test bundle run from an
@@ -245,6 +246,20 @@ than a second source inside it: `Pipeline` carries the aggregate-rebuild, device
 keep-alive machinery that a live call depends on, and a microphone is not tap-backed, so
 none of it applies. Keeping them apart means enabling the mic cannot regress caller capture.
 
+One thing crosses between them, in one direction. With the call on speakers the mic hears
+the caller too, so `Pipeline` writes the level of every tap buffer into a `FarEndActivity` —
+before the pause check, because a paused tap is one nobody is reading, not one the speakers
+have stopped playing, and before anything that can suspend — and `MicSource` asks it about
+each of its own buffers. `EchoGate` decides from that whether the mic is a copy of the far
+end, and if so the buffer is zeroed before the endpointer and the recogniser see it — one
+step, `EchoGate.process`, in `WngmnCore` so that its order is tested. Both sides stamp by the
+host clock: the tap's own timeline counts samples, and drifts from it when the output
+device's crystal runs fast. It is a lock, not a message between the two actors: the question
+is asked a hundred times a second about a stretch of time that ended milliseconds ago, and an
+`await` into `Pipeline` would queue it behind the recogniser. A mic buffer waits in its ring
+until the tap has reported past it, by sound or by `advanceIdleTime`'s silence, and for a
+second at most, so a tap that is rebuilding cannot stop the half that still works.
+
 Two things also run on a timer in the consume loop rather than in the trace: `advanceIdleTime`
 walks both the endpointer and the analyser through wall-clock silence (clamped by a 60 ms
 delivery-lag allowance), and `checkCaptureHealth` / `checkSilentCapture` watch for a tap that
@@ -371,9 +386,9 @@ Current codes, for orientation rather than as an exhaustive contract — `warnin
 `swept_aggregates`, `listener_failed`, `feed_failed`, `capture_gap`, `no_audio`,
 `silent_capture`, `rebuilding`, `rebuild_failed`, `transcriber_ended`, `question_lost`,
 `final_timeout`, `volatile_fallback`, `mic_failed`, `mic_feed_failed`, `mic_unmute_failed`,
-`mic_question_lost`, `mic_silent`. `error`: `fatal`, `selftest_setup`,
+`mic_question_lost`, `mic_silent`, `mic_hears_call`, `mic_hears_call_cleared`. `error`: `fatal`, `selftest_setup`,
 `selftest_no_buffers`, `selftest_no_frames`, `selftest_silent`, `selftest_too_quiet`.
-`metric`: `vad_db`, `selftest_peak`, `selftest_rms_db`, `selftest_frames`, `mic_ambient_db`,
+`metric`: `vad_db`, `mic_db`, `echo_likeness`, `echo_gain_db`, `echo_lag_ms`, `selftest_peak`, `selftest_rms_db`, `selftest_frames`, `mic_ambient_db`,
 `mic_speech_db`, `mic_recommended_db`.
 
 `rebuild_failed` is a warning, not an error, and the distinction is the contract: `error`

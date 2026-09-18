@@ -118,6 +118,9 @@ public actor Pipeline {
     /// happened to receive its first buffer first.
     private let timeline: CaptureTimeline
     private let control: CaptureControl
+    /// Where this source says what the far end is doing, for a microphone that may be
+    /// hearing it out of a speaker. Nil when there is no microphone to tell.
+    private let farEnd: FarEndActivity?
     /// Which capture-graph anchor `timelineOffset` was computed against. Without this the
     /// offset could only ever be computed once, so a second device change during the same
     /// call would leave every timestamp after it wrong.
@@ -152,12 +155,14 @@ public actor Pipeline {
         configuration: Configuration,
         writer: EventWriter,
         timeline: CaptureTimeline = CaptureTimeline(),
-        control: CaptureControl = CaptureControl()
+        control: CaptureControl = CaptureControl(),
+        farEnd: FarEndActivity? = nil
     ) {
         self.configuration = configuration
         self.writer = writer
         self.timeline = timeline
         self.control = control
+        self.farEnd = farEnd
         let tap = SystemAudioTap(configuration: configuration.tap)
         self.tap = tap
         activeTap.withLock { $0 = tap }
@@ -353,6 +358,26 @@ public actor Pipeline {
             warnedNoBuffers = false
             consecutiveRebuilds = 0
 
+            let start = timelineOffset + timing.streamSeconds
+            // Said before the pause check, and before anything below can suspend. Paused is
+            // the user not reading the caller, not the speakers going quiet: the mic hears
+            // them all the same. And the mic waits for this, so it must not queue behind the
+            // recogniser.
+            if let farEnd {
+                let level = scratch.withUnsafeBufferPointer {
+                    AudioLevel.decibels(UnsafeBufferPointer(rebasing: $0[0..<segment.frameCount]))
+                }
+                // By the host clock, as the mic stamps its own buffers — not by `start`, which
+                // counts samples. The two drift apart when the output device's crystal runs
+                // fast, and the mic would be looking for the echo of a moment that, by its
+                // clock, has not happened yet.
+                let heardAt = (segment.hostTime != 0 ? timeline.seconds(forHostTime: segment.hostTime) : nil) ?? start
+                farEnd.record(
+                    start: heardAt,
+                    end: heardAt + Double(segment.frameCount) / tap.format.sampleRate,
+                    levelDB: level)
+            }
+
             // Tracked before the pause check: a pause is silence by request, and counting it
             // would report the user's own mute as a broken tap.
             if !control.tapPaused {
@@ -385,7 +410,6 @@ public actor Pipeline {
                     state: "control", format: nil, detail: control.stateDescription))
             }
 
-            let start = timelineOffset + timing.streamSeconds
             if timing.didResync, timing.gapSeconds > 0.1 {
                 writer.emit(.warning(
                     code: "capture_gap",
@@ -429,6 +453,7 @@ public actor Pipeline {
         // Only ever advance through time the tap has certainly finished delivering.
         let settled = now - Self.deliveryLagAllowance
         guard settled > 0 else { return }
+        farEnd?.advance(through: settled)
 
         var events: [EndpointerEvent] = []
         endpointer.idle(upTo: settled) { events.append($0) }
