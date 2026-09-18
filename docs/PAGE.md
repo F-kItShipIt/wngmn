@@ -229,6 +229,12 @@ the batcher holds one speaker's lines open until the turn ends — the other spe
 2.5 s of silence passes — and hands over the whole thing at once. Two questions 1.2 s apart
 are one turn and one call.
 
+**One request at a time.** While an answer is on its way, turns that close are held, in
+order, and go out together when it lands — so the model answers the conversation as it stands
+rather than working through a backlog. The one answer is attached to the last of those turns;
+the earlier ones are context and get none of their own, which is why a row in the middle of a
+fast exchange can stay unanswered while the counter shows a single call.
+
 **Your own turns go too**, above a floor of four words. `--auto-own-min-words` moves the
 floor and `0` removes it; the caller is never held to it, because a one-word question from
 them is still a question. A shape rule was tried here first — a question mark, or an opening

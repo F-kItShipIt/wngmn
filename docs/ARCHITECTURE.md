@@ -50,7 +50,7 @@ They do not know about each other. The executable is the only place the three me
 
 `Endpointer`, `QuestionAssembler`, `AudioRingBuffer`, `Event`/`EventEncoder`,
 `TextNormalizer`, `TermList`, `Profile`/`ProfileSource`, `Options`, `CaptureControl`,
-`MicCalibration`, `RunningProcesses`.
+`MicCalibration`, `RunningProcesses`, `TurnBatcher`, `AnswerQueue`.
 
 Deliberately free of Core Audio and `Speech`. The reason is testability under the permission
 model: System Audio Recording is granted to a *parent process*, so a test bundle run from an
@@ -63,6 +63,11 @@ permission and no microphone. Its fixtures are headerless 16 kHz mono little-end
 `AudioRingBuffer` lives here despite being the audio hot path, because it is pure memory and
 atomics, and because its overrun and wraparound behaviour is exactly the kind of thing that
 should be asserted rather than observed on a live call.
+
+`TurnBatcher` and `AnswerQueue` are here for the same reason, one level up. When a turn is
+over, and what may be sent while a request is already out, are decisions — and both are value
+types that take their inputs as arguments, so neither needs a clock, a socket or a model to be
+tested.
 
 ### WngmnAudio — everything that touches the system
 
@@ -113,6 +118,11 @@ public typealias AskHandler = @Sendable (
 
 The executable supplies it. The returned `Task` is handed back so the server can cancel an
 answer that has been overtaken by a revision of its question.
+
+`AutoAnswerer` (the real-time loop: utterances in, answer frames out) and `CallConversation`
+(the call as one Messages-API conversation, which is also what the end-of-call notes are
+written from). The answerer's turn-taking is not its own: `TurnBatcher` decides when a turn is
+over and `AnswerQueue` decides what is sent, both pure and both in `WngmnCore`.
 
 ### wngmn — the executable
 
@@ -244,6 +254,15 @@ single-producer/single-consumer — one IOProc writing, one actor reading.
 because the resampler is genuinely stateful — a second pass on the same instance without
 `reset()` produces different samples — and making "drive this from one serial context" a
 compiler-enforced property is cheaper than an audit.
+
+**One request at a time is a value type's property, not an actor's.** `AutoAnswerer` is an
+actor, and it used to await each answer inline. Actors are re-entrant while suspended, so with
+one answer streaming the half-second ticker could close another turn and start a second
+request beside it; the ledger then held both user turns before either reply. `AnswerQueue`
+holds it to one: `question` and `tick` enqueue and return, a single drain task owns whatever
+is out, and everything that closed meanwhile goes as one batch when it settles. A cancel is
+recorded by request id rather than applied to a task, because it can arrive in the gap
+between the queue handing out an id and the request's task existing.
 
 **Escape hatches, each for a stated reason.** `Pipeline.activeTap` is a `Mutex`, not actor
 state, because teardown has to be callable synchronously from the signal handler: a `Task`
