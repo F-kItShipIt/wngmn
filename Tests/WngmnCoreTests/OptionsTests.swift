@@ -434,3 +434,44 @@ struct ShotOptionsTests {
         }
     }
 }
+
+/// Whether a run starts with auto already on.
+///
+/// It did not, until it did. The tool's point is an answer that arrives while the other person
+/// is still waiting for yours; a toggle to find, in the first seconds of a call, stood between
+/// every new user and that. So it starts on — and the ways it must *not* start on are what
+/// these pin.
+@Suite("Auto on by default")
+struct AutoDefaultTests {
+    @Test("A served run with credentials starts with auto on")
+    func startsOn() throws {
+        let o = try Options.parse(["--serve"])
+        #expect(o.autoAnswer)
+        #expect(o.startsWithAuto(hasCredentials: true))
+    }
+
+    @Test("--no-auto is the way to start with it off")
+    func noAuto() throws {
+        let o = try Options.parse(["--serve", "--no-auto"])
+        #expect(!o.autoAnswer)
+        #expect(!o.startsWithAuto(hasCredentials: true))
+    }
+
+    /// With no key every turn would become an `answer_failed` row: a transcript full of red,
+    /// from a feature nobody asked for, on a run whose startup already said Ask will fail.
+    @Test("Without credentials it starts off, rather than failing on every turn")
+    func offWithoutCredentials() throws {
+        #expect(!(try Options.parse(["--serve"]).startsWithAuto(hasCredentials: false)))
+    }
+
+    /// Auto answers onto the page. With nothing served there is nowhere for an answer to go.
+    @Test("Without a page there is nothing to answer onto")
+    func offWithoutAPage() throws {
+        #expect(!(try Options.parse([]).startsWithAuto(hasCredentials: true)))
+    }
+
+    @Test("--no-auto is documented")
+    func documented() {
+        #expect(Options.usage.contains("--no-auto"))
+    }
+}

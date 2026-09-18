@@ -137,6 +137,19 @@ public struct Options: Sendable, Equatable {
     /// Latency is the binding constraint on a live call, so this defaults low rather than
     /// to the API's own default of `high`.
     public var askEffort = "low"
+    /// Whether a run starts with auto already on. It does, since 0.4.0: the point of the tool
+    /// is an answer that arrives while the other person is still waiting for yours, and a
+    /// toggle to find in the first seconds of a call stood between every new user and that.
+    /// `--no-auto` is the old behaviour. The page's toggle still turns it off mid-call.
+    public var autoAnswer = true
+
+    /// Whether this run starts with auto on. Not without a page — there would be nowhere for
+    /// an answer to go — and not without credentials, where every turn would become a failed
+    /// answer on a run whose startup has already said that Ask will fail.
+    public func startsWithAuto(hasCredentials: Bool) -> Bool {
+        serve && autoAnswer && hasCredentials
+    }
+
     /// What `wngmn shot` asks for: the whole screen, or a region to drag.
     public var shotMode = ShotMode.screen
     /// How many words one of your own turns must carry before auto spends a call on it.
@@ -229,6 +242,7 @@ public struct Options: Sendable, Equatable {
                     throw ParseError("--region belongs to `wngmn shot`")
                 }
                 o.shotMode = .region
+            case "--no-auto": o.autoAnswer = false
             case "--mic": o.mic = true
             // Naming a device is an unambiguous request to capture from it.
             case "--mic-device": o.micDeviceUID = try value(arg); o.mic = true
@@ -475,6 +489,10 @@ public struct Options: Sendable, Equatable {
       --ask-model <id>       model for answers (default claude-opus-5)
       --ask-effort <level>   low, medium, high, xhigh or max (default low — latency is the
                              binding constraint on a live call)
+      --no-auto              start with auto off. It starts ON: every turn that ends is sent
+                             to Claude as it ends, with no press of Ask, and answered in a
+                             running conversation. The page's auto toggle turns it off and
+                             on mid-call. Starts off anyway when there are no credentials.
       --auto-own-min-words <n>
                              words one of your own turns needs before auto answers it
                              (default 4). Your filler is what spends calls you did not
@@ -484,9 +502,10 @@ public struct Options: Sendable, Equatable {
 
       Credentials are read from ANTHROPIC_API_KEY, then ANTHROPIC_AUTH_TOKEN, then the
       profile written by `ant auth login`. Asking sends the question and the recent
-      transcript to the Claude API. Nothing is sent until you press the button — unless
-      you turn on the page's prefetch toggle, which sends every caller question as it
-      lands, without a press, or its auto toggle, which sends every turn as it ends.
+      transcript to the Claude API. With --serve, auto is ON unless you pass --no-auto:
+      every turn that ends is sent as it ends, nobody pressing anything. With auto off,
+      nothing is sent until you press Ask — unless you turn on the page's prefetch
+      toggle, which sends every caller question as it lands.
       `wngmn shot` sends a picture of your screen, and it stays in the conversation, so
       it is sent again with every later turn until wngmn exits.
       --seconds <n>          selftest duration (default 3)

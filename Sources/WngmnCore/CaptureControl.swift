@@ -27,7 +27,8 @@ public final class CaptureControl: Sendable {
     public var micMuted: Bool { mic.load(ordering: .relaxed) }
     /// Tap audio is being discarded rather than transcribed.
     public var tapPaused: Bool { tap.load(ordering: .relaxed) }
-    /// Each caller turn is answered automatically, without a press of Ask. Off by default.
+    /// Each turn is answered automatically, without a press of Ask. Off unless it is asked
+    /// for here; whether a *run* starts with it on is `Options.startsWithAuto`.
     public var autoAnswer: Bool { auto.load(ordering: .relaxed) }
 
     /// Returns whether the value actually changed, so a redundant toggle does not restart a
