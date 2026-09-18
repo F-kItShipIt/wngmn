@@ -13,7 +13,7 @@ import Testing
 
 /// A server in the test process: each request is answered from a script registered under its
 /// path, so tests running in parallel never read each other's.
-final class StubProtocol: URLProtocol, @unchecked Sendable {
+final class StubProtocol: URLProtocol {
     struct Script: Sendable {
         var status = 200
         var chunks: [Data] = []
