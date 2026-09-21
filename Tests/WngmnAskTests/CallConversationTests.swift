@@ -191,44 +191,37 @@ struct CallConversationTests {
         #expect(messages.count == 2)
     }
 
-    /// Past 20 images in one request the API holds every image in it to 2000 px on both sides,
-    /// and images from earlier turns count. A shot is kept at up to 2576 px, so a 21st would
-    /// fail its own request — and, staying in the conversation, every request after it.
-    ///
-    /// Five go at once rather than one. Each eviction rewrites a message near the start of the
-    /// conversation, and prompt caching is a prefix match, so it throws away the cached prefix;
-    /// one at a time would do that on every shot past the twentieth instead of every fifth.
-    @Test("At twenty pictures the oldest five lose their picture, and keep their place")
+    /// Every picture kept is uploaded again with every turn. With four or more attached a real
+    /// call uploaded eight to eleven megabytes a turn, and nearly a third of its requests
+    /// failed on the network. The newest two are what a follow-up is about.
+    @Test("Only the newest two pictures stay attached; older ones keep their place as words")
     func capsThePictures() async {
         let convo = CallConversation(profile: profile())
-        for i in 1...20 { _ = await convo.startBatch([.shot(shot(Double(i)))]) }
-        let (_, messages) = await convo.startBatch([.shot(shot(21))])
+        for i in 1...4 { _ = await convo.startBatch([.shot(shot(Double(i)))]) }
+        let (_, messages) = await convo.startBatch([.shot(shot(5))])
 
-        let withPicture = messages.filter(CallConversation.hasPicture)
-        #expect(withPicture.count == 16, "fifteen kept, and the new one")
-        #expect(messages.count == 21, "every shot keeps its place in the conversation")
-        for index in 0..<5 {
+        #expect(messages.filter(CallConversation.hasPicture).count == 2)
+        #expect(messages.count == 5, "every shot keeps its place in the conversation")
+        for index in 0..<3 {
             #expect(messages[index].blocks == [.text("Screen: an earlier screenshot, no longer attached.")])
         }
-        #expect(CallConversation.hasPicture(messages[5]))
-        #expect(messages[20].blocks.count == 2, "the newest has its picture")
+        #expect(CallConversation.hasPicture(messages[3]))
+        #expect(messages[4].blocks.count == 2, "the newest has its picture")
     }
 
-    /// The count is not the limit that is reached first. A request may be 32 MB, every picture
-    /// kept is sent again with every turn, and one picture may be 10 MB encoded — so four big
-    /// ones would cross it with the cap of twenty nowhere in sight. Past it the API answers
-    /// 413, the newest shot is removed as rejected, and every shot after it goes the same way.
-    @Test("Pictures are also kept under a byte budget, which is reached long before twenty")
+    /// A request may be 32 MB, and one picture may be 10 MB encoded, so even two can cross it.
+    /// Past it the API answers 413, the newest shot is removed as rejected, and every shot
+    /// after it goes the same way.
+    @Test("Pictures are also kept under a byte budget, which two big ones can cross")
     func keepsPicturesUnderABudget() async {
         let convo = CallConversation(profile: profile())
-        let big = String(repeating: "A", count: 9_000_000)
+        let big = String(repeating: "A", count: 13_000_000)
         _ = await convo.startBatch([.shot(shot(1, base64: big))])
-        _ = await convo.startBatch([.shot(shot(2, base64: big))])
-        let (_, messages) = await convo.startBatch([.shot(shot(3, base64: big))])
+        let (_, messages) = await convo.startBatch([.shot(shot(2, base64: big))])
 
-        #expect(messages.filter(CallConversation.hasPicture).count == 2, "27 MB does not fit in 24")
+        #expect(messages.filter(CallConversation.hasPicture).count == 1, "26 MB does not fit in 24")
         #expect(!CallConversation.hasPicture(messages[0]), "the oldest goes first")
-        #expect(CallConversation.hasPicture(messages[2]), "the one just taken is never the one dropped")
+        #expect(CallConversation.hasPicture(messages[1]), "the one just taken is never the one dropped")
         let kept = messages.reduce(0) { $0 + CallConversation.pictureBytes($1) }
         #expect(kept <= CallConversation.pictureByteBudget)
     }
