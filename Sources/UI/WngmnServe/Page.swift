@@ -1654,9 +1654,11 @@ function addShot(e) {
   if (questions.some(x => questionKey(x) === e.key)) return;
   const atBottom = lines.scrollHeight - lines.scrollTop - lines.clientHeight < 60;
   const size = e.w && e.h ? ` · ${e.w}×${e.h}` : "";
+  // A later part of a set: its answer reads every screenshot of the set together.
+  const part = e.part > 1 ? ` · part ${e.part} of a set` : "";
   const q = {
     kind: "shot", key: e.key, speaker: "screen", t0: e.t, t1: e.t,
-    text: `Screenshot · ${e.mode}${size}`, asked: true, answer: "",
+    text: `Screenshot · ${e.mode}${size}${part}`, asked: true, answer: "",
   };
   const empty = lines.querySelector(".empty");
   if (empty) empty.remove();

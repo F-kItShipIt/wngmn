@@ -455,8 +455,9 @@ struct AutoAnswererTests {
 
     // MARK: - Screenshots
 
-    func shot(_ t: Double) -> Shot {
-        Shot(base64: "iVBORw0KGgo=", t: t, mode: .region, width: 1500, height: 900, byteCount: 412_380)
+    func shot(_ t: Double, set: Double? = nil, part: Int = 1) -> Shot {
+        Shot(base64: "iVBORw0KGgo=", t: t, mode: .region, width: 1500, height: 900, byteCount: 412_380,
+             setStart: set, part: part)
     }
 
     /// Pressing the key is the Ask. The toggle is for what is overheard; this was deliberate.
@@ -616,7 +617,7 @@ struct AutoAnswererTests {
 
         await a.shot(shot(5))
         await wait(until: { h.respondCalls == 1 })
-        await a.shot(shot(9))
+        await a.shot(shot(9, set: 5, part: 2))
         gate.open()
         await a.idle()
 
@@ -625,6 +626,16 @@ struct AutoAnswererTests {
         let second = h.seen.first { $0.contains("answer_done") && $0.contains("\"key\":\"screen@9\"") }
         #expect(second?.contains("two-pointer merge") == true)
         #expect(h.pictures.last == 2, "the overtaken picture is still in the conversation")
+    }
+
+    /// The page labels a later part of a set from this; the first carries nothing extra.
+    @Test("A screenshot's frame says which part of its set it is, from the second on")
+    func frameCarriesThePart() {
+        #expect(!AutoAnswerer.shotFrame(shot(5)).contains("part"))
+        let second = AutoAnswerer.shotFrame(shot(9, set: 5, part: 2))
+        #expect(second.contains(#""part":2"#))
+        #expect(second.hasSuffix("}"))
+        #expect((try? JSONSerialization.jsonObject(with: Data(second.utf8))) != nil, "still JSON: \(second)")
     }
 
     @Test("Two screenshots sent together are answered under the later one")
@@ -636,7 +647,7 @@ struct AutoAnswererTests {
         await a.submit(turn("Here, it is in two parts.", 1))
         await wait(until: { h.respondCalls == 1 })
         await a.shot(shot(5))
-        await a.shot(shot(9))
+        await a.shot(shot(9, set: 5, part: 2))
         gate.open()
         await a.idle()
 

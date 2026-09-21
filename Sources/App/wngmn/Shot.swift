@@ -64,6 +64,9 @@ actor ShotTaker {
     private let streamNow: @Sendable () -> Double
 
     private var isTaking = false
+    /// Which screenshots are one thing. Placed only when a picture is really sent, so a set is
+    /// never counted as having a part the conversation does not hold.
+    private var series = ShotSeries()
     private var grantSeen = false
     private var grantRequested = false
     private var lastT = -Double.infinity
@@ -135,27 +138,38 @@ actor ShotTaker {
             }
         }
 
-        // The bytes are in hand, so the temporary file goes now — before the size check, the
+        // What goes to Claude is whichever is smaller. A set is several pictures, each sent
+        // again with every turn, and a full screen measured 1.15 MB as PNG and 650 KB as JPEG.
+        // If sips fails there is no JPEG, and the PNG goes as it always did.
+        let jpegFile = directory.appendingPathComponent("shot.jpg")
+        _ = await BoundedProcess.run(
+            ShotCapture.sips, ShotCapture.jpegArguments(png: file.path, jpeg: jpegFile.path), timeout: 15)
+        let jpeg = (try? Data(contentsOf: jpegFile)) ?? Data()
+        let sendsJPEG = ShotCapture.sendsJPEG(pngBytes: data.count, jpegBytes: jpeg.count)
+        let sent = sendsJPEG ? jpeg : data
+
+        // The bytes are in hand, so the temporary files go now — before the size check, the
         // encoding and the hand-off, not when this function happens to return.
         Self.discardLiveDirectory()
 
-        let shot = Shot(
-            base64: "", t: uniqueT(), mode: mode,
-            width: size.width, height: size.height, byteCount: data.count)
-        // Kept whether or not it can be sent: it is what was on the screen, and the history of
-        // the call is not only what the API accepted.
-        keep(data, as: shot)
+        let t = uniqueT()
+        // Kept whether or not it can be sent, and kept as the PNG: it is what was on the
+        // screen, and the history of the call is not only what the API accepted.
+        keep(data, as: Shot(base64: "", t: t, mode: mode, width: size.width, height: size.height, byteCount: data.count))
 
-        guard ShotCapture.fitsTheAPI(byteCount: data.count) else {
+        guard ShotCapture.fitsTheAPI(byteCount: sent.count) else {
             return await fail(
                 mode,
-                "the screenshot is \(data.count / 1_000_000) MB, more than the API takes in one image."
-                + " Drag a smaller region. Nothing was sent.", t: shot.t)
+                "the screenshot is \(sent.count / 1_000_000) MB, more than the API takes in one image."
+                + " Drag a smaller region. Nothing was sent.", t: t)
         }
 
+        let place = series.place(t)
         await answerer.shot(Shot(
-            base64: data.base64EncodedString(), t: shot.t, mode: mode,
-            width: size.width, height: size.height, byteCount: data.count))
+            base64: sent.base64EncodedString(), t: t, mode: mode,
+            width: size.width, height: size.height, byteCount: sent.count,
+            mediaType: sendsJPEG ? "image/jpeg" : "image/png",
+            setStart: place.start, part: place.part))
     }
 
     /// A copy with the session, private to this user like the transcript beside it. A copy

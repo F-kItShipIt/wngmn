@@ -273,13 +273,20 @@ the counter appears, because a call was made. And it stays: the picture is in th
 conversation, so "can you do that in place?", said aloud a minute later with auto on, has
 its "that".
 
-The newest two stay, and no more. Every picture kept is uploaded again with every turn —
-prompt caching saves tokens, not bytes — and on a real call on 21 September, with four or
-more attached, every turn uploaded eight to eleven megabytes over Wi-Fi and nearly a third
-of that call's requests failed on the network. A picture that goes keeps its place and its
-answer, which is where most of what it said lives on; its message says it is no longer
-attached. The two are also kept under 24 MB encoded, since a request may be 32 MB and one
-picture may be 10.
+**Screenshots come in sets.** One taken within 90 seconds of the one before joins its set —
+a problem too long for one screen, a page scrolled — and is told to Claude as "screenshot 2
+of one thing … read screenshots 1 to 2 together", so the answer comes from all of them. It
+cuts in on the answer in progress like any shot; nothing ever waits for a second one, so a
+lone screenshot is answered as it always was. Its row says `part 2 of a set`.
+
+A set is what stays attached, and no more, up to six pictures. Every picture kept is uploaded
+again with every turn — prompt caching saves tokens, not bytes — and on a real call on 21
+September, with four or more attached, every turn uploaded eight to eleven megabytes over
+Wi-Fi and nearly a third of that call's requests failed on the network. So a new set drops
+the pictures of the one before, and each picture goes as a JPEG when that is smaller: a full
+screen measured 1.15 MB as PNG and 650 KB as JPEG at quality 80. A picture that goes keeps
+its place and its answer, which is where most of what it said lives on; its message says it
+is no longer attached. A set is also kept under 24 MB encoded, since a request may be 32 MB.
 
 **Your own turns go too**, above a floor of four words. `--auto-own-min-words` moves the
 floor and `0` removes it; the caller is never held to it, because a one-word question from

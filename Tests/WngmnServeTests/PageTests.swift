@@ -1257,6 +1257,18 @@ struct ScreenshotRowTests {
         #expect(got == "1|shot|screen@83.412|Screenshot · region · 1500×900|true|83.412")
     }
 
+    /// Several screenshots of one thing are answered together. The row says which part it is,
+    /// so the phone shows that the answer on the last one is reading all of them.
+    @Test("A later part of a set says so on its row", .enabled(if: PageTests.nodeIsAvailable))
+    func labelsAPart() throws {
+        let got = try run("""
+            handleEvent({type:'shot', key:'screen@90', t:90, mode:'screen', w:2576, h:1673, bytes:650000, part:2});
+            handleEvent(\(Self.shot));
+            return questions.map(q => q.text).join("|");
+            """)
+        #expect(got == "Screenshot · screen · 2576×1673 · part 2 of a set|Screenshot · region · 1500×900")
+    }
+
     @Test("Its row says Screen, with no latency tag and no Ask button", .enabled(if: PageTests.nodeIsAvailable))
     func rowMarkup() throws {
         let html = try run("handleEvent(\(Self.shot)); return questions[0].el.innerHTML;")
