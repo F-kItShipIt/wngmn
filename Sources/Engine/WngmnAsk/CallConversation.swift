@@ -24,17 +24,20 @@ public actor CallConversation {
     private struct Entry {
         var message: ClaudeClient.Message
         var shotKey: String?
+        /// The set a screenshot belongs to. Nil for speech.
+        var setStart: Double?
     }
     private var entries: [Entry] = []
     private var messages: [ClaudeClient.Message] { entries.map(\.message) }
 
-    /// Every picture kept is uploaded again with every turn, and prompt caching saves tokens,
-    /// not bytes. On a real call on 21 September a whole-screen shot was 1.5 to 2.1 MB, about
-    /// 2.8 MB once encoded; with four or more attached, every turn uploaded eight to eleven
-    /// megabytes over Wi-Fi, and 29 % of that call's requests failed on the network, against
-    /// under 2 % on a call with none. The newest two are what a follow-up is about; an older
-    /// one lives on in the answer it got, which stays in the conversation as text.
-    static let maximumPictures = 2
+    /// Which pictures stay attached: the set in hand, and nothing older. Every picture kept is
+    /// uploaded again with every turn, and prompt caching saves tokens, not bytes. On a real
+    /// call on 21 September, with four or more whole-screen shots attached, every turn uploaded
+    /// eight to eleven megabytes over Wi-Fi, and 29 % of that call's requests failed on the
+    /// network, against under 2 % on a call with none. A set is one problem and has to be read
+    /// whole; a new set is a new problem, and the one before lives on in the answer it got.
+    /// Six to a set at most, which is several screens of anything.
+    static let maximumPicturesInASet = 6
 
     /// The limit that is reached first. A request may be 32 MB, every picture kept is sent
     /// again with every turn, and one picture may be 10 MB encoded, so four big ones cross it
@@ -43,11 +46,6 @@ public actor CallConversation {
     /// leaves room for the text, the system prompt, and the ~1.6 % `JSONSerialization` adds to
     /// base64 by escaping every `/`.
     static let pictureByteBudget = 24_000_000
-
-    /// How many of the oldest pictures go when the count is reached. Each eviction rewrites an
-    /// earlier message, and prompt caching is a prefix match, so it discards the cached prefix
-    /// from there on; with two kept, that is the price of every shot past the second.
-    static let evictionBlock = 1
 
     public init(profile: Profile) {
         system = Self.buildSystem(profile: profile)
@@ -82,8 +80,8 @@ public actor CallConversation {
                     message: ClaudeClient.Message(role: "user", text: Self.userMessage(for: turn)),
                     shotKey: nil))
             case let .shot(shot):
-                makeRoomForAPicture(of: shot.base64.utf8.count)
-                entries.append(Entry(message: Self.message(for: shot), shotKey: shot.key))
+                makeRoomForAPicture(for: shot)
+                entries.append(Entry(message: Self.message(for: shot), shotKey: shot.key, setStart: shot.setStart))
             }
         }
         return (system, messages)
@@ -99,19 +97,26 @@ public actor CallConversation {
     /// The oldest picture gives up its image and keeps its place: the label says so, and the
     /// answer that was given about it is still the next message, so a later "the first one you
     /// showed me" still has something to refer to.
-    private func makeRoomForAPicture(of incomingBytes: Int) {
-        var pictures = entries.indices.filter { Self.hasPicture(entries[$0].message) }
-        var toDrop = pictures.count >= Self.maximumPictures ? Self.evictionBlock : 0
-        var kept = pictures.reduce(0) { $0 + Self.pictureBytes(entries[$1].message) }
-        // Oldest first, until both limits hold. The picture arriving is never the one dropped:
-        // it is the one that was just asked about.
-        while let oldest = pictures.first, toDrop > 0 || kept + incomingBytes > Self.pictureByteBudget {
+    private func makeRoomForAPicture(for shot: Shot) {
+        let pictures = entries.indices.filter { Self.hasPicture(entries[$0].message) }
+        // Earlier sets first, all of them.
+        for index in pictures where entries[index].setStart != shot.setStart { detach(index) }
+        // Then this set's oldest, until its count and the byte budget both hold. The picture
+        // arriving is never the one dropped: it is the one that was just asked about.
+        var inSet = pictures.filter { entries[$0].setStart == shot.setStart }
+        var kept = inSet.reduce(0) { $0 + Self.pictureBytes(entries[$1].message) }
+        while let oldest = inSet.first,
+              inSet.count + 1 > Self.maximumPicturesInASet
+                || kept + shot.base64.utf8.count > Self.pictureByteBudget {
             kept -= Self.pictureBytes(entries[oldest].message)
-            entries[oldest].message = ClaudeClient.Message(
-                role: "user", text: "Screen: an earlier screenshot, no longer attached.")
-            pictures.removeFirst()
-            toDrop -= 1
+            detach(oldest)
+            inSet.removeFirst()
         }
+    }
+
+    private func detach(_ index: Int) {
+        entries[index].message = ClaudeClient.Message(
+            role: "user", text: "Screen: an earlier screenshot, no longer attached.")
     }
 
     /// The encoded size of the pictures a message carries, which is what goes on the wire.
@@ -182,7 +187,11 @@ public actor CallConversation {
         labelled Screen: that is a picture I just took of my own screen, usually something the \
         other side has put in front of me — a problem, a document, a diagram. Treat what it \
         shows as part of the conversation. Taking it is me asking you about it now, so work out \
-        what it calls for and answer that, and never reply NONE to a Screen message.
+        what it calls for and answer that, and never reply NONE to a Screen message. \
+        Screenshots come in sets: one labelled "screenshot 2 of one thing" was taken right \
+        after the one before, of the same thing — a problem too long for one screen, a page \
+        scrolled. Read every screenshot of the set together, as one, and answer from all of \
+        them rather than from the last.
         """
         return system
     }
@@ -196,9 +205,13 @@ public actor CallConversation {
     /// The picture, then the words that refer to it — the order the vision documentation
     /// recommends. The encoder keeps whatever order it is given, so this is where it is decided.
     static func message(for shot: Shot) -> ClaudeClient.Message {
-        ClaudeClient.Message(role: "user", blocks: [
-            .image(mediaType: "image/png", base64: shot.base64),
-            .text("Screen: a screenshot I just took of my screen."),
+        let words = shot.part == 1
+            ? "Screen: a screenshot I just took of my screen."
+            : "Screen: screenshot \(shot.part) of one thing, taken right after the one before it. "
+                + "Read screenshots 1 to \(shot.part) together, as one, and answer from all of them."
+        return ClaudeClient.Message(role: "user", blocks: [
+            .image(mediaType: shot.mediaType, base64: shot.base64),
+            .text(words),
         ])
     }
 

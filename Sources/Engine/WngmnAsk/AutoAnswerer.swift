@@ -330,7 +330,7 @@ public actor AutoAnswerer {
     static func shotFrame(_ shot: Shot) -> String {
         #"{"type":"shot","key":\#(EventEncoder.quote(shot.key)),"t":\#(EventEncoder.number(shot.t)),"#
             + #""mode":\#(EventEncoder.quote(shot.mode.rawValue)),"w":\#(shot.width),"h":\#(shot.height),"#
-            + #""bytes":\#(shot.byteCount)}"#
+            + #""bytes":\#(shot.byteCount)"# + (shot.part > 1 ? #","part":\#(shot.part)"# : "") + "}"
     }
 
     static func answerDoneFrame(key: String, text: String) -> String {

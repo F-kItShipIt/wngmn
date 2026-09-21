@@ -120,6 +120,73 @@ struct KeptShotTests {
     }
 }
 
+/// Screenshots taken one after another are one thing — a problem too long for one screen, a
+/// document scrolled — and are answered together. Nothing waits for a second one: the first is
+/// answered at once, and a second only looks back to see what it belongs with.
+@Suite("Screenshot sets")
+struct ShotSeriesTests {
+    @Test("A first screenshot starts a set of its own")
+    func first() {
+        var series = ShotSeries()
+        #expect(series.place(100) == .init(start: 100, part: 1))
+    }
+
+    @Test("One taken within ninety seconds of the last joins its set", arguments: [1.0, 45, 90])
+    func joins(after gap: Double) {
+        var series = ShotSeries()
+        _ = series.place(100)
+        #expect(series.place(100 + gap) == .init(start: 100, part: 2))
+    }
+
+    /// Measured from the screenshot before, not the first: scrolling through a long problem
+    /// a screen at a time is one set however long the scrolling takes.
+    @Test("A chain of them stays one set, however long the chain")
+    func chains() {
+        var series = ShotSeries()
+        let parts = [100.0, 170, 240, 310].map { series.place($0) }
+        #expect(parts.map(\.part) == [1, 2, 3, 4])
+        #expect(Set(parts.map(\.start)) == [100])
+    }
+
+    @Test("One taken longer after the last starts a new set")
+    func newSet() {
+        var series = ShotSeries()
+        _ = series.place(100)
+        _ = series.place(150)
+        #expect(series.place(241) == .init(start: 241, part: 1))
+        #expect(series.place(250) == .init(start: 241, part: 2))
+    }
+
+    /// What `Shot` does with nothing said about sets: each is its own, so every caller that
+    /// never heard of them keeps the behaviour it had.
+    @Test("A screenshot built without a set is a set of one")
+    func defaults() {
+        let shot = Shot(base64: "", t: 7, mode: .screen, width: 1, height: 1, byteCount: 1)
+        #expect(shot.setStart == 7)
+        #expect(shot.part == 1)
+        #expect(shot.mediaType == "image/png")
+    }
+}
+
+/// Every picture attached is uploaded again with every turn, and a set is several. Measured on
+/// a full screen: 1.15 MB as PNG, 650 KB as JPEG at quality 80, which still reads as code.
+@Suite("Screenshot encoding")
+struct ShotEncodingTests {
+    @Test("The JPEG is made with sips, at quality 80, beside the PNG")
+    func arguments() {
+        #expect(ShotCapture.jpegArguments(png: "/t/s.png", jpeg: "/t/s.jpg")
+                == ["-s", "format", "jpeg", "-s", "formatOptions", "80", "/t/s.png", "--out", "/t/s.jpg"])
+    }
+
+    /// A screen of flat colour and little text can come out smaller as PNG; then that goes.
+    @Test("Whichever is smaller is sent, and a JPEG that failed is never chosen")
+    func smaller() {
+        #expect(ShotCapture.sendsJPEG(pngBytes: 1_149_814, jpegBytes: 649_518))
+        #expect(!ShotCapture.sendsJPEG(pngBytes: 200_000, jpegBytes: 310_000))
+        #expect(!ShotCapture.sendsJPEG(pngBytes: 200_000, jpegBytes: 0))
+    }
+}
+
 /// A shot's row is keyed by its time, rounded to the millisecond, so two shots must never
 /// round to the same one.
 @Suite("Shot clock")

@@ -156,6 +156,8 @@ wngmn shot
 
 The answer shows up like any other. With auto on, wngmn remembers the picture, so when they follow up with "can you do that faster?" it knows what "that" is.
 
+Problem too long for one screen? Take a screenshot, scroll, take another. Any screenshot taken within 90 seconds of the one before joins it as one set: the answer in progress stops, and the next one reads the whole set together. The first one never waits for a second, so if there isn't one, its answer just stands. On the page, later ones say "part 2 of a set".
+
 **Put it on a key**, because you will not be typing commands in the middle of an interview.
 
 1. In Terminal, run `command -v wngmn`. It prints where wngmn lives. Copy that.
@@ -260,7 +262,7 @@ There is no server, so there is nothing to collect and no way for this project t
 - **Audio** never leaves. Speech becomes text on your Mac, and that covers theirs, yours and anything else the Mac plays while wngmn is running. `--call-apps` and `--no-mic` shrink that.
 - **auto**, which is on unless you pass `--no-auto`, sends each turn as it ends, theirs and yours, along with the conversation so far and your profile. wngmn says so when it starts.
 - **Ask** sends that line, the few before it and your profile when you tap. Tick **prefetch** on the page and it goes for every line of theirs the moment it lands.
-- **shot** sends a picture of your screen when you press your key. It stays in the conversation and rides along with every later answer until two newer screenshots replace it. Whatever else is on the screen goes with it, so drag a region if that matters. A copy is saved with that call's transcript, so the history has its pictures too.
+- **shot** sends a picture of your screen when you press your key. It stays in the conversation, along with the rest of its set, and rides along with every later answer until you start a new set. Whatever else is on the screen goes with it, so drag a region if that matters. A copy is saved with that call's transcript, so the history has its pictures too.
 - **notes** sends the conversation auto already sent, once more, when you tap **▸ notes**.
 - **The transcript** is saved on your own disk, answers and screenshots included. `--no-log` turns that off.
 - **`--listen`** puts the page on your Wi-Fi, locked by the secret code at the end of the link, the `?t=…` part. Anyone holding the full link can read along, so don't hand it out. Screenshots can only ever be triggered from the Mac itself.

@@ -129,8 +129,10 @@ struct CallConversationTests {
                 "the newest message alone is no longer the unit")
     }
 
-    func shot(_ t: Double, base64: String = "iVBORw0KGgo=") -> Shot {
-        Shot(base64: base64, t: t, mode: .region, width: 1500, height: 900, byteCount: 9)
+    func shot(_ t: Double, base64: String = "iVBORw0KGgo=", set: Double? = nil, part: Int = 1,
+              mediaType: String = "image/png") -> Shot {
+        Shot(base64: base64, t: t, mode: .region, width: 1500, height: 900, byteCount: 9,
+             mediaType: mediaType, setStart: set, part: part)
     }
 
     /// The picture first, then the words that refer to it, which is the order the vision
@@ -191,22 +193,64 @@ struct CallConversationTests {
         #expect(messages.count == 2)
     }
 
+    /// A problem too long for one screen is several screenshots of one thing, and has to be
+    /// read as one: the answer comes from all of them.
+    @Test("A screenshot taken right after another says it is part of the same thing")
+    func labelsAPart() async {
+        let convo = CallConversation(profile: profile())
+        _ = await convo.startBatch([.shot(shot(10))])
+        let (system, messages) = await convo.startBatch([.shot(shot(30, set: 10, part: 2))])
+        #expect(messages[0].text == "Screen: a screenshot I just took of my screen.")
+        #expect(messages[1].text.contains("screenshot 2 of one thing"))
+        #expect(messages[1].text.contains("1 to 2 together"))
+        #expect(system.contains("screenshot 2 of one thing"), "the prompt says what that means")
+    }
+
+    @Test("Every screenshot of the set in hand stays attached")
+    func keepsTheWholeSet() async {
+        let convo = CallConversation(profile: profile())
+        for part in 1...4 { _ = await convo.startBatch([.shot(shot(Double(part), set: 1, part: part))]) }
+        let (_, messages) = await convo.startBatch([.shot(shot(5, set: 1, part: 5))])
+        #expect(messages.filter(CallConversation.hasPicture).count == 5)
+    }
+
     /// Every picture kept is uploaded again with every turn. With four or more attached a real
     /// call uploaded eight to eleven megabytes a turn, and nearly a third of its requests
-    /// failed on the network. The newest two are what a follow-up is about.
-    @Test("Only the newest two pictures stay attached; older ones keep their place as words")
-    func capsThePictures() async {
+    /// failed on the network. A new set is a new problem; the one before lives on as the
+    /// answer it got.
+    @Test("A new set drops the pictures of the sets before it, which keep their place as words")
+    func dropsEarlierSets() async {
         let convo = CallConversation(profile: profile())
-        for i in 1...4 { _ = await convo.startBatch([.shot(shot(Double(i)))]) }
-        let (_, messages) = await convo.startBatch([.shot(shot(5))])
+        _ = await convo.startBatch([.shot(shot(1, set: 1, part: 1))])
+        _ = await convo.startBatch([.shot(shot(2, set: 1, part: 2))])
+        let (_, messages) = await convo.startBatch([.shot(shot(200))])
 
-        #expect(messages.filter(CallConversation.hasPicture).count == 2)
-        #expect(messages.count == 5, "every shot keeps its place in the conversation")
-        for index in 0..<3 {
+        #expect(messages.filter(CallConversation.hasPicture).count == 1)
+        #expect(messages.count == 3, "every shot keeps its place in the conversation")
+        for index in 0..<2 {
             #expect(messages[index].blocks == [.text("Screen: an earlier screenshot, no longer attached.")])
         }
-        #expect(CallConversation.hasPicture(messages[3]))
-        #expect(messages[4].blocks.count == 2, "the newest has its picture")
+        #expect(messages[2].blocks.count == 2, "the newest has its picture")
+    }
+
+    @Test("Past six in one set, its oldest go first")
+    func capsASet() async {
+        let convo = CallConversation(profile: profile())
+        for part in 1...6 { _ = await convo.startBatch([.shot(shot(Double(part), set: 1, part: part))]) }
+        let (_, messages) = await convo.startBatch([.shot(shot(7, set: 1, part: 7))])
+        #expect(messages.filter(CallConversation.hasPicture).count == 6)
+        #expect(!CallConversation.hasPicture(messages[0]))
+        #expect(CallConversation.hasPicture(messages[6]))
+    }
+
+    @Test("A picture goes as the kind it is")
+    func mediaType() async {
+        let convo = CallConversation(profile: profile())
+        let (_, messages) = await convo.startBatch([.shot(shot(1, mediaType: "image/jpeg"))])
+        guard case let .image(mediaType, _) = messages[0].blocks.first else {
+            Issue.record("no picture"); return
+        }
+        #expect(mediaType == "image/jpeg")
     }
 
     /// A request may be 32 MB, and one picture may be 10 MB encoded, so even two can cross it.
@@ -216,8 +260,8 @@ struct CallConversationTests {
     func keepsPicturesUnderABudget() async {
         let convo = CallConversation(profile: profile())
         let big = String(repeating: "A", count: 13_000_000)
-        _ = await convo.startBatch([.shot(shot(1, base64: big))])
-        let (_, messages) = await convo.startBatch([.shot(shot(2, base64: big))])
+        _ = await convo.startBatch([.shot(shot(1, base64: big, set: 1, part: 1))])
+        let (_, messages) = await convo.startBatch([.shot(shot(2, base64: big, set: 1, part: 2))])
 
         #expect(messages.filter(CallConversation.hasPicture).count == 1, "26 MB does not fit in 24")
         #expect(!CallConversation.hasPicture(messages[0]), "the oldest goes first")

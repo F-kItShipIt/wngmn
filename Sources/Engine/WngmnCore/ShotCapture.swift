@@ -21,21 +21,70 @@ public struct Shot: Sendable, Equatable {
     public let mode: ShotMode
     public let width: Int
     public let height: Int
-    /// The PNG's size before encoding. Logged, so that a slow turn can be explained afterwards.
+    /// The size of the picture as sent, before encoding. Logged, so that a slow turn can be
+    /// explained afterwards.
     public let byteCount: Int
+    /// `image/png` or `image/jpeg`: whichever was smaller.
+    public let mediaType: String
+    /// The set it belongs to, named by the `t` of the set's first screenshot, and its place in
+    /// it, from 1. See `ShotSeries`.
+    public let setStart: Double
+    public let part: Int
 
-    public init(base64: String, t: Double, mode: ShotMode, width: Int, height: Int, byteCount: Int) {
+    public init(
+        base64: String, t: Double, mode: ShotMode, width: Int, height: Int, byteCount: Int,
+        mediaType: String = "image/png", setStart: Double? = nil, part: Int = 1
+    ) {
         self.base64 = base64
         self.t = t
         self.mode = mode
         self.width = width
         self.height = height
         self.byteCount = byteCount
+        self.mediaType = mediaType
+        self.setStart = setStart ?? t
+        self.part = part
     }
 
     /// The key its row and its answer share. Through `EventEncoder.number`, like every other
     /// key: two spellings of one Double is how an answer once failed to find its row.
     public var key: String { "screen@\(EventEncoder.number(t))" }
+}
+
+/// Screenshots taken one after another, of one thing.
+///
+/// A problem too long for one screen, a document scrolled: several screenshots, one question,
+/// and the answer has to come from all of them. Nothing waits for a second one — the first is
+/// answered at once — so a set is decided by looking back: a screenshot taken within ninety
+/// seconds of the one before joins its set, and the next answer reads the set together.
+/// Measured from the one before, not the first, so scrolling through something long a screen
+/// at a time is one set however long the scrolling takes.
+public struct ShotSeries: Sendable {
+    public static let windowSeconds = 90.0
+
+    public struct Place: Sendable, Equatable {
+        public let start: Double
+        public let part: Int
+        public init(start: Double, part: Int) {
+            self.start = start
+            self.part = part
+        }
+    }
+
+    private var current: Place?
+    private var last = -Double.infinity
+
+    public init() {}
+
+    public mutating func place(_ t: Double) -> Place {
+        defer { last = t }
+        if let current, t - last <= Self.windowSeconds {
+            self.current = Place(start: current.start, part: current.part + 1)
+        } else {
+            current = Place(start: t, part: 1)
+        }
+        return current!
+    }
 }
 
 /// The decisions about a screenshot that need no screen.
@@ -77,6 +126,21 @@ public enum ShotCapture {
 
     public static func needsDownscale(width: Int, height: Int) -> Bool {
         max(width, height) > maximumLongEdge
+    }
+
+    /// Every picture attached is uploaded again with every turn, and a set is several. Measured
+    /// on a full screen: 1.15 MB as PNG, 650 KB as JPEG at quality 80, which still reads as
+    /// code. Only what is sent is JPEG; the copy kept with the session is the PNG.
+    public static let jpegQuality = 80
+
+    public static func jpegArguments(png: String, jpeg: String) -> [String] {
+        ["-s", "format", "jpeg", "-s", "formatOptions", String(jpegQuality), png, "--out", jpeg]
+    }
+
+    /// A screen of flat colour and little text can come out smaller as PNG, and then the PNG
+    /// goes. A JPEG that could not be made is never the smaller one.
+    public static func sendsJPEG(pngBytes: Int, jpegBytes: Int) -> Bool {
+        jpegBytes > 0 && jpegBytes < pngBytes
     }
 
     public static func base64Length(ofByteCount count: Int) -> Int {
