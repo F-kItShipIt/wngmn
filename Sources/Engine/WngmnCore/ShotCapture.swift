@@ -13,7 +13,8 @@ public enum ShotMode: String, Sendable, Equatable {
 /// Plain data, so it can cross from the executable, which takes the picture, to the answerer,
 /// which sends it, without either target importing the other's frameworks.
 public struct Shot: Sendable, Equatable {
-    /// The PNG, base64-encoded, as the API takes it. The file it came from is already deleted.
+    /// The PNG, base64-encoded, as the API takes it. The temporary file it came from is
+    /// already gone; a copy is kept with the session, unless nothing of the session is.
     public let base64: String
     /// Stream seconds, on the clock the question lines use, so the row sorts and reads with them.
     public let t: Double
@@ -150,6 +151,21 @@ public enum ShotCapture {
 
     public static func unreachable(port: UInt16) -> String {
         "no wngmn is serving on port \(port); start one with --serve, or pass its --port"
+    }
+
+    // MARK: - Keeping them
+
+    /// Where a session keeps its screenshots: beside its transcript, in a folder named after
+    /// it. A screenshot is as much the history of a call as its lines and its answers, and
+    /// without a copy the pictures behind those answers were gone the moment they were read.
+    public static func shotsDirectory(forSession log: URL) -> URL {
+        log.deletingPathExtension().appendingPathExtension("shots")
+    }
+
+    /// Named by the key the transcript already gives the row, so a picture, its row and its
+    /// answer go by one name.
+    public static func keptFile(for shot: Shot, in directory: URL) -> URL {
+        directory.appendingPathComponent("\(shot.key).png")
     }
 
     // MARK: - After a restart

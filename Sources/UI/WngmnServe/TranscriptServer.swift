@@ -131,6 +131,10 @@ public final class TranscriptServer: Sendable {
 
     private let configuration: Configuration
     private let state = Mutex(State())
+
+    /// The session's transcript on disk, when there is one; what else belongs to the session
+    /// is kept beside it.
+    public var logURL: URL? { configuration.log?.url }
     private let listener: Mutex<NWListener?> = Mutex(nil)
     private let heartbeat: Mutex<DispatchSourceTimer?> = Mutex(nil)
     private let queue = DispatchQueue(label: "wngmn.serve")

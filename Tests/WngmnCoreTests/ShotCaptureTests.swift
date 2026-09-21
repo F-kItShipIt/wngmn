@@ -89,6 +89,37 @@ struct ShotCaptureTests {
     }
 }
 
+/// A screenshot is part of the call's history, like the lines and the answers, and is kept
+/// with the rest of it: beside the transcript, named after it. Without that, the pictures
+/// behind a call's answers were gone the moment they were read, and asked for afterwards,
+/// there was nothing to give.
+@Suite("Kept screenshots")
+struct KeptShotTests {
+    let log = URL(fileURLWithPath: "/tmp/wngmn/sessions/2026-09-21T10-57-39.jsonl")
+
+    @Test("They sit beside the session's transcript, in a folder named after it")
+    func besideTheLog() {
+        let directory = ShotCapture.shotsDirectory(forSession: log)
+        #expect(directory.path == "/tmp/wngmn/sessions/2026-09-21T10-57-39.shots")
+    }
+
+    /// Named by the key the log already uses for the row, so a picture, its row and its
+    /// answer are found by the same name.
+    @Test("Each is named by its row's key")
+    func namedByKey() {
+        let shot = Shot(base64: "", t: 181.292, mode: .region, width: 1, height: 1, byteCount: 1)
+        let file = ShotCapture.keptFile(for: shot, in: ShotCapture.shotsDirectory(forSession: log))
+        #expect(file.lastPathComponent == "screen@181.292.png")
+        #expect(file.lastPathComponent == "\(shot.key).png")
+    }
+
+    /// `--resume` continues the same transcript, so it continues the same folder.
+    @Test("A resumed session keeps adding to the same folder")
+    func resumed() {
+        #expect(ShotCapture.shotsDirectory(forSession: log) == ShotCapture.shotsDirectory(forSession: log))
+    }
+}
+
 /// A shot's row is keyed by its time, rounded to the millisecond, so two shots must never
 /// round to the same one.
 @Suite("Shot clock")

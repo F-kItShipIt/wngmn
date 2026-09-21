@@ -260,9 +260,9 @@ There is no server, so there is nothing to collect and no way for this project t
 - **Audio** never leaves. Speech becomes text on your Mac, and that covers theirs, yours and anything else the Mac plays while wngmn is running. `--call-apps` and `--no-mic` shrink that.
 - **auto**, which is on unless you pass `--no-auto`, sends each turn as it ends, theirs and yours, along with the conversation so far and your profile. wngmn says so when it starts.
 - **Ask** sends that line, the few before it and your profile when you tap. Tick **prefetch** on the page and it goes for every line of theirs the moment it lands.
-- **shot** sends a picture of your screen when you press your key. It stays in the conversation and rides along with every later answer until two newer screenshots replace it. Whatever else is on the screen goes with it, so drag a region if that matters. The file is deleted as soon as it's read.
+- **shot** sends a picture of your screen when you press your key. It stays in the conversation and rides along with every later answer until two newer screenshots replace it. Whatever else is on the screen goes with it, so drag a region if that matters. A copy is saved with that call's transcript, so the history has its pictures too.
 - **notes** sends the conversation auto already sent, once more, when you tap **▸ notes**.
-- **The transcript** is saved on your own disk, answers included. `--no-log` turns that off.
+- **The transcript** is saved on your own disk, answers and screenshots included. `--no-log` turns that off.
 - **`--listen`** puts the page on your Wi-Fi, locked by the secret code at the end of the link, the `?t=…` part. Anyone holding the full link can read along, so don't hand it out. Screenshots can only ever be triggered from the Mac itself.
 - **`install-model`** is a download from Apple. Nothing of yours goes with it.
 
