@@ -88,11 +88,11 @@ What it is **not** a defence against, stated plainly so nobody relies on it:
   `AssetInventory`; that is an OS asset download, not a transmission of anything of yours.
 * **No audio is written to disk.** Buffers are processed in memory and discarded. The only
   audio file the code opens is the one you hand to `wngmn offline <file>`, for reading.
-* **A screenshot is on disk only while it is being taken.** `screencapture` writes it into a
-  mode-0700 directory under the temporary directory; wngmn reads it, shrinks it if it is over
-  2576 px, and deletes file and directory before anything is sent. After that it is held in
-  memory, base64-encoded, for the life of the process. It is never written to the session
-  log — see *What is on disk*.
+* **A screenshot is kept with the session, like the transcript.** `screencapture` writes it
+  into a mode-0700 directory under the temporary directory; wngmn reads it, shrinks it if it
+  is over 2576 px, and deletes that file and directory before anything is sent. A copy is
+  kept beside the session log, mode 0600 in a mode-0700 folder, so the history of a call has
+  its pictures as well as its words — see *What is on disk*. With `--no-log` nothing is kept.
 * **No telemetry, no analytics, no crash reporting, no update check.** There is no other URL
   in the source.
 * **No third-party dependencies.** `Package.swift` declares none. The HTTP/1.1 server, the
@@ -215,10 +215,10 @@ value.
 With `--serve`, logging is on by default: every replayable event is appended to
 `~/Library/Application Support/wngmn/sessions/<timestamp>.jsonl`, and that includes the
 `answer_done` frame carrying the full answer text — including the answer to a screenshot,
-which can quote what was on the screen. The screenshot itself is never logged: its `shot`
-frame records when it was taken, whether it was the screen or a region, and its size in pixels
-and bytes. Files are created mode 0600 in a 0700
-directory, so another account cannot read them — but nothing ever deletes them. There is no
+which can quote what was on the screen. **The screenshots are kept too**, since 0.4.2: as PNG
+files in `sessions/<timestamp>.shots/`, each named by the key of its row in the log, so a
+year of calls keeps a year of pictures of your screen, with whatever else was on it. Files are
+created mode 0600 in a 0700 directory, so another account cannot read them — but nothing ever deletes them. There is no
 purge command, no age-based sweep, and `wngmn stop` does not touch sessions. A year of
 confidential interviews accumulates in plaintext under your home directory. `--no-log` turns
 it off (and then `--resume` cannot work); `--log-dir` puts the files somewhere you choose,

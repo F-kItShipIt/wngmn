@@ -190,6 +190,7 @@ struct Wngmn {
         if let autoAnswerer {
             let taker = ShotTaker(
                 answerer: autoAnswerer, writer: writer,
+                keepIn: server?.logURL.map(ShotCapture.shotsDirectory(forSession:)),
                 streamNow: {
                     timeline.seconds(forHostTime: HostClock.now()) ?? newestStreamTime.withLock { $0 }
                 })

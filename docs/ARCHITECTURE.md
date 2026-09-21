@@ -429,7 +429,8 @@ server: `answer` (a streamed fragment), `answer_done` (the complete answer, back
 From the answerer: `auto` (the running count of calls and answers, live-only),
 `summary_pending`, `summary_done` and `summary_failed` for the end-of-call notes, and `shot`
 — a screenshot was taken: when, whether the screen or a region, and its size in pixels and
-bytes. Never the picture. `shot` is backlogged and logged like a question line, because it is
+bytes. Never the picture, which is kept beside the log instead, in `<session>.shots/` under the
+row's key. `shot` is backlogged and logged like a question line, because it is
 a row in the transcript; it is built by hand rather than through `JSONSerialization`, which
 spells 83.412 as 83.412000000000006, so that its `t` and its `key` agree to the digit. Each answer frame carries `key` and
 `for`, so a page can drop a frame that reached the socket before the server heard its

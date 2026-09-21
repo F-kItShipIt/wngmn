@@ -57,6 +57,9 @@ enum ShotClient {
 actor ShotTaker {
     private let answerer: AutoAnswerer
     private let writer: EventWriter
+    /// Where the pictures are kept with the rest of the session. Nil with `--no-log`, which
+    /// asks for nothing of the session to be kept.
+    private let keepIn: URL?
     /// Stream seconds, on the clock the question lines use.
     private let streamNow: @Sendable () -> Double
 
@@ -65,9 +68,13 @@ actor ShotTaker {
     private var grantRequested = false
     private var lastT = -Double.infinity
 
-    init(answerer: AutoAnswerer, writer: EventWriter, streamNow: @escaping @Sendable () -> Double) {
+    init(
+        answerer: AutoAnswerer, writer: EventWriter, keepIn: URL?,
+        streamNow: @escaping @Sendable () -> Double
+    ) {
         self.answerer = answerer
         self.writer = writer
+        self.keepIn = keepIn
         self.streamNow = streamNow
     }
 
@@ -128,20 +135,43 @@ actor ShotTaker {
             }
         }
 
-        // The bytes are in hand, so the file goes now — before the size check, the encoding and
-        // the hand-off, not when this function happens to return.
+        // The bytes are in hand, so the temporary file goes now — before the size check, the
+        // encoding and the hand-off, not when this function happens to return.
         Self.discardLiveDirectory()
+
+        let shot = Shot(
+            base64: "", t: uniqueT(), mode: mode,
+            width: size.width, height: size.height, byteCount: data.count)
+        // Kept whether or not it can be sent: it is what was on the screen, and the history of
+        // the call is not only what the API accepted.
+        keep(data, as: shot)
 
         guard ShotCapture.fitsTheAPI(byteCount: data.count) else {
             return await fail(
                 mode,
                 "the screenshot is \(data.count / 1_000_000) MB, more than the API takes in one image."
-                + " Drag a smaller region. Nothing was sent.")
+                + " Drag a smaller region. Nothing was sent.", t: shot.t)
         }
 
         await answerer.shot(Shot(
-            base64: data.base64EncodedString(), t: uniqueT(), mode: mode,
+            base64: data.base64EncodedString(), t: shot.t, mode: mode,
             width: size.width, height: size.height, byteCount: data.count))
+    }
+
+    /// A copy with the session, private to this user like the transcript beside it. A copy
+    /// that cannot be written is said and then not dwelt on: the answer matters more on a
+    /// call than the record of it.
+    private func keep(_ data: Data, as shot: Shot) {
+        guard let keepIn else { return }
+        let file = ShotCapture.keptFile(for: shot, in: keepIn)
+        do {
+            try FileManager.default.createDirectory(
+                at: keepIn, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            try data.write(to: file, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+        } catch {
+            writer.emit(.warning(code: "shot_not_kept", detail: "could not keep \(file.path): \(error)"))
+        }
     }
 
     /// Checked until it has once been true, and not only on the first shot: a check made once
@@ -184,9 +214,9 @@ actor ShotTaker {
 
     /// A warning, for the log and the side panel, and a row with the reason on it, because the
     /// side panel is the one part of the page a phone does not show.
-    private func fail(_ mode: ShotMode, _ detail: String) async {
+    private func fail(_ mode: ShotMode, _ detail: String, t: Double? = nil) async {
         writer.emit(.warning(code: "shot_failed", detail: detail))
-        await answerer.shotFailed(t: uniqueT(), mode: mode, detail: detail)
+        await answerer.shotFailed(t: t ?? uniqueT(), mode: mode, detail: detail)
     }
 }
 
