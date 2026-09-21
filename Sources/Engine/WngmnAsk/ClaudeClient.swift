@@ -2,6 +2,7 @@ import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
+import Synchronization
 
 /// Streaming client for the Claude Messages API.
 ///
@@ -32,12 +33,18 @@ public struct ClaudeClient: Sendable {
     typealias Transport = @Sendable (URLRequest) async throws -> (status: Int, lines: AsyncThrowingStream<String, any Error>)
     private let transport: Transport
 
+    /// How long to wait before each retry of a request the network dropped before a word of
+    /// its answer arrived; one entry per retry. Short, because the other person is waiting.
+    static let retryDelays: [Duration] = [.milliseconds(300), .seconds(1)]
+    private let retryDelays: [Duration]
+
     public init(configuration: Configuration = Configuration()) {
-        self.init(configuration: configuration) { try await HTTPLines.send($0) }
+        self.init(configuration: configuration) { try await HTTPLines.shared.send($0) }
     }
 
-    init(configuration: Configuration, transport: @escaping Transport) {
+    init(configuration: Configuration, retryDelays: [Duration] = Self.retryDelays, transport: @escaping Transport) {
         self.configuration = configuration
+        self.retryDelays = retryDelays
         self.transport = transport
     }
 
@@ -238,6 +245,46 @@ public struct ClaudeClient: Sendable {
 
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
+        // A request the network dropped before a word of its answer arrived is sent again:
+        // nothing has been shown, so nothing can be said twice. On a real call on 21
+        // September, 80 answers were lost to TLS errors and dropped connections on Wi-Fi.
+        // Once words are on the page it is not, and neither is anything the server refused.
+        var retry = 0
+        while true {
+            let spoke = Spoke()
+            do {
+                try await send(request, onUsage: onUsage, onTruncated: onTruncated) { text in
+                    spoke.happened()
+                    onText(text)
+                }
+                return
+            } catch let error as URLError where Self.isWorthRetrying(error.code) {
+                guard !spoke.hasHappened, retry < retryDelays.count, !Task.isCancelled else { throw error }
+                try await Task.sleep(for: retryDelays[retry])
+                retry += 1
+            }
+        }
+    }
+
+    /// The network failures that say nothing about the request, only about the way to it.
+    static func isWorthRetrying(_ code: URLError.Code) -> Bool {
+        [.secureConnectionFailed, .networkConnectionLost, .timedOut, .cannotConnectToHost,
+         .cannotFindHost, .dnsLookupFailed, .notConnectedToInternet].contains(code)
+    }
+
+    /// Whether any of the answer has been handed on.
+    private final class Spoke: Sendable {
+        private let flag = Mutex(false)
+        func happened() { flag.withLock { $0 = true } }
+        var hasHappened: Bool { flag.withLock { $0 } }
+    }
+
+    private func send(
+        _ request: URLRequest,
+        onUsage: (@Sendable (Int, Int, Int) -> Void)?,
+        onTruncated: (@Sendable () -> Void)?,
+        onText: @escaping @Sendable (String) -> Void
+    ) async throws {
         let (status, lines) = try await transport(request)
         guard status == 200 else {
             // The body is the error JSON, not a stream. Read it so the user sees the actual

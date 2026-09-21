@@ -28,11 +28,13 @@ public actor CallConversation {
     private var entries: [Entry] = []
     private var messages: [ClaudeClient.Message] { entries.map(\.message) }
 
-    /// Past 20 images in one request the API holds every image in it to 2000 px on both sides,
-    /// and images resent from earlier turns count towards the 20. A shot is kept at up to
-    /// 2576 px, so a 21st would fail its own request and — because it stays in the conversation
-    /// — every request after it.
-    static let maximumPictures = 20
+    /// Every picture kept is uploaded again with every turn, and prompt caching saves tokens,
+    /// not bytes. On a real call on 21 September a whole-screen shot was 1.5 to 2.1 MB, about
+    /// 2.8 MB once encoded; with four or more attached, every turn uploaded eight to eleven
+    /// megabytes over Wi-Fi, and 29 % of that call's requests failed on the network, against
+    /// under 2 % on a call with none. The newest two are what a follow-up is about; an older
+    /// one lives on in the answer it got, which stays in the conversation as text.
+    static let maximumPictures = 2
 
     /// The limit that is reached first. A request may be 32 MB, every picture kept is sent
     /// again with every turn, and one picture may be 10 MB encoded, so four big ones cross it
@@ -42,11 +44,10 @@ public actor CallConversation {
     /// base64 by escaping every `/`.
     static let pictureByteBudget = 24_000_000
 
-    /// How many of the oldest pictures go when the count is reached. Each eviction rewrites a
-    /// message near the start of the conversation, and prompt caching is a prefix match, so it
-    /// discards the cached prefix. One at a time would do that on every shot past the
-    /// twentieth; five at a time does it on every fifth.
-    static let evictionBlock = 5
+    /// How many of the oldest pictures go when the count is reached. Each eviction rewrites an
+    /// earlier message, and prompt caching is a prefix match, so it discards the cached prefix
+    /// from there on; with two kept, that is the price of every shot past the second.
+    static let evictionBlock = 1
 
     public init(profile: Profile) {
         system = Self.buildSystem(profile: profile)

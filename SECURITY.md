@@ -82,7 +82,8 @@ What it is **not** a defence against, stated plainly so nobody relies on it:
   your profile or notes. With **auto** on it carries the running conversation — every turn
   that closed, yours and theirs, and every answer so far. And after a `wngmn shot` it carries
   a **picture of your screen**, which then stays in that conversation and is sent again with
-  every later turn until wngmn exits. A picture is not like a sentence: it takes whatever
+  every later turn until two newer screenshots have replaced it, or wngmn exits. A picture
+  is not like a sentence: it takes whatever
   else was on the display with it. `wngmn install-model` asks macOS to fetch a speech model through
   `AssetInventory`; that is an OS asset download, not a transmission of anything of yours.
 * **No audio is written to disk.** Buffers are processed in memory and discarded. The only

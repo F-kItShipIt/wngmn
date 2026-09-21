@@ -10,19 +10,34 @@ import Synchronization
 /// Linux and Windows use does not have, and which kept the whole Claude client on Apple
 /// platforms. A data delegate is the same thing built from parts every Foundation has, and
 /// it is used on macOS too, so the path the Linux build runs is the path CI tests on both.
-enum HTTPLines {
-    static func send(
-        _ request: URLRequest, configuration: URLSessionConfiguration = .ephemeral
-    ) async throws -> (status: Int, lines: AsyncThrowingStream<String, any Error>) {
+///
+/// One session for every request, so one connection is opened and kept. The first version of
+/// this opened a session per request, which is a TCP and a TLS handshake per answer; on the
+/// Wi-Fi of a real call on 21 September, 80 of that call's 272 requests failed as TLS errors
+/// and dropped connections, where the call before, on a shared session, lost 6 of 356.
+final class HTTPLines: @unchecked Sendable {
+    /// The one every answer goes through.
+    static let shared = HTTPLines()
+
+    private let session: URLSession
+    private let router: Router
+
+    init(configuration: URLSessionConfiguration = .ephemeral) {
+        let router = Router()
+        self.router = router
+        session = URLSession(configuration: configuration, delegate: router, delegateQueue: nil)
+    }
+
+    deinit { session.finishTasksAndInvalidate() }
+
+    func send(_ request: URLRequest) async throws -> (status: Int, lines: AsyncThrowingStream<String, any Error>) {
         let (lines, sink) = AsyncThrowingStream<String, any Error>.makeStream()
-        let reader = Reader(lines: sink)
-        // One session per request: a session holds its delegate until it is invalidated, and
-        // the reader invalidates it as soon as the request is over.
-        let session = URLSession(configuration: configuration, delegate: reader, delegateQueue: nil)
         let task = session.dataTask(with: request)
+        let reader = Reader(lines: sink)
+        router.add(reader, for: task.taskIdentifier)
         // A reader that stops reading — auto cancelling an answer a screenshot has overtaken —
         // stops the request with it, or the answer goes on streaming, and being paid for,
-        // into nothing.
+        // into nothing. Cancelling a request does not close the shared connection.
         sink.onTermination = { _ in task.cancel() }
         let status = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
@@ -35,7 +50,24 @@ enum HTTPLines {
         return (status, lines)
     }
 
-    private final class Reader: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    /// The session's one delegate, handing each task's callbacks to that task's reader.
+    private final class Router: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+        private let readers = Mutex<[Int: Reader]>([:])
+
+        func add(_ reader: Reader, for task: Int) { readers.withLock { $0[task] = reader } }
+
+        func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+            let reader = readers.withLock { $0[dataTask.taskIdentifier] }
+            reader?.received(data, on: dataTask)
+        }
+
+        func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
+            let reader = readers.withLock { $0.removeValue(forKey: task.taskIdentifier) }
+            reader?.completed(task, error: error)
+        }
+    }
+
+    private final class Reader: @unchecked Sendable {
         private struct State {
             var status: CheckedContinuation<Int, any Error>?
             var buffer = LineBuffer()
@@ -54,18 +86,16 @@ enum HTTPLines {
         /// The status is read off the task at the first byte, not from the response callback:
         /// that callback's signature differs between the two Foundations, and a method that
         /// only nearly matches an optional requirement is silently never called.
-        private func reportStatus(of task: URLSessionTask) {
+        func received(_ data: Data, on task: URLSessionTask) {
             let status = (task.response as? HTTPURLResponse)?.statusCode ?? 0
-            state.withLock { $0.status.take() }?.resume(returning: status)
-        }
-
-        func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-            reportStatus(of: dataTask)
-            let complete = state.withLock { $0.buffer.append(data) }
+            let (waiting, complete) = state.withLock { state in
+                (state.status.take(), state.buffer.append(data))
+            }
+            waiting?.resume(returning: status)
             for line in complete { lines.yield(line) }
         }
 
-        func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
+        func completed(_ task: URLSessionTask, error: (any Error)?) {
             let (waiting, rest) = state.withLock { state in
                 (state.status.take(), state.buffer.finish())
             }
@@ -77,7 +107,6 @@ enum HTTPLines {
                 if let rest { lines.yield(rest) }
                 lines.finish()
             }
-            session.finishTasksAndInvalidate()
         }
     }
 }
