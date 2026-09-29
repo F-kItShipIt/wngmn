@@ -18,7 +18,7 @@ A teleprompter for the half of the conversation you can't script.
 
 **It heard the question. You take the credit.**
 
-You're on a call. wngmn sits next to it on your Mac, writes down what the other person says, and slides an answer in front of you while they're still waiting for yours. Claude drafts it out of notes you wrote, so it sounds like you on a good day. Interviews, sales calls, investor calls, the meeting that should have been an email. wngmn is not trying to join your meeting. It is already sitting next to you, and nobody on the call can see it.
+You're on a call. wngmn sits next to it on your Mac, writes down what the other person says, and slides an answer in front of you while they're still waiting for yours. If they put the question on the screen instead, press one key: wngmn takes a picture of it and the answer starts by itself. Claude drafts it out of notes you wrote, so it sounds like you on a good day. Interviews, sales calls, investor calls, the meeting that should have been an email. wngmn is not trying to join your meeting. It is already sitting next to you, and nobody on the call can see it.
 
 ![The caller finishes, the answer arrives, nobody touched the page](docs/images/auto.gif)
 
@@ -154,16 +154,18 @@ This one grabs the whole main screen.
 wngmn shot
 ```
 
-The answer shows up like any other. With auto on, wngmn remembers the picture, so when they follow up with "can you do that faster?" it knows what "that" is.
+That's the whole move. The picture goes straight to Claude and the answer starts on the page by itself, with no **Ask** to tap. It does that even with auto off, because you asked for it by taking the picture. With auto on, wngmn remembers the picture, so when they follow up with "can you do that faster?" it knows what "that" is.
+
+![One key press, the screenshot lands, the answer follows, nobody touched the page](docs/images/shot.gif)
 
 Problem too long for one screen? Take a screenshot, scroll, take another. Any screenshot taken within 90 seconds of the one before joins it as one set: the answer in progress stops, and the next one reads the whole set together. The first one never waits for a second, so if there isn't one, its answer just stands. On the page, later ones say "part 2 of a set".
 
-**Put it on a key**, because you will not be typing commands in the middle of an interview.
+**Put it on a key**, because you will not be typing commands in the middle of an interview. After that, a screenshot and its answer are one key press.
 
 1. In Terminal, run `command -v wngmn`. It prints where wngmn lives. Copy that.
 2. Open the **Shortcuts** app, press **+**, search for **Run Shell Script** and double-click it.
 3. In its box, paste what you copied, then a space, then `shot --region`.
-4. Click ⓘ, then **Add Keyboard Shortcut**, then press the keys you want.
+4. Click ⓘ, then **Add Keyboard Shortcut**, then press the keys you want. Include ⌃ or ⌘, as in ⌃⌥S. Shortcuts never sees ⌥ plus a letter on its own, because the Mac types ß instead.
 5. Want the whole screen on a key too? Do it again with plain `shot`.
 
 Press your key once before the call. The first time, macOS asks whether Terminal can record the screen. Allow it, quit Terminal with ⌘Q, and start wngmn again.
@@ -248,7 +250,7 @@ Nothing in here prints an error. It just goes quiet, which is worse, so check th
 | `wngmn --listen --profile ~/me.md` | Answers from your notes |
 | `wngmn --listen --no-auto` | Answers only when you tap **Ask** |
 | `wngmn --serve` | This Mac only, at http://127.0.0.1:7373 |
-| `wngmn shot --region` | Screenshot a problem (put it on a key) |
+| `wngmn shot --region` | Screenshot a problem and get the answer. Put it on a key and it's one press |
 | `wngmn --listen --resume` | Pick the transcript back up after a crash |
 | `wngmn stop` | Stop every wngmn that's running |
 | `wngmn --help` | Every flag there is |

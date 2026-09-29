@@ -99,6 +99,66 @@ window, so they close as a single turn and are answered together. The header rea
 `auto: 1 answered · 1 call`. Leave the end-of-call prompt in shot if it appears — 20 s of
 silence is what triggers it, and it is the same dialog the transcript panel offers.
 
+## `docs/images/shot.gif` — one key, a screenshot, an answer
+
+A real capture of a real screen, sent to Claude. That means whatever is on the main display goes
+into the picture, so the display has to show nothing but the subject.
+
+**1.** Serve an empty call: five minutes of silence, so no speech rows compete with the shot,
+and a throwaway profile so the answer has a voice. `--log-dir` keeps the transcript, and the
+PNG that was sent, somewhere you can inspect and delete:
+
+```sh
+python3 -c "import wave; w = wave.open('/tmp/silence.wav', 'wb'); w.setnchannels(1); w.setsampwidth(2); w.setframerate(16000); w.writeframes(b'\0' * 16000 * 2 * 300); w.close()"
+cat > /tmp/vc-demo.md <<'EOF'
+# VC associate interview
+
+## Style
+I'm interviewing for an associate role at a venture capital firm. Answer the question on
+screen in first person, 3 or 4 short sentences I can say out loud as written. If several
+questions are visible, answer the first one. No preamble.
+
+## Context
+I spent 5 years as a product manager at Northwind Robotics, a warehouse robotics startup,
+where deployments went from 4 to 34. I angel-invest small cheques in developer tools and
+logistics software, and I write a monthly note on robotics funding.
+EOF
+wngmn offline /tmp/silence.wav --serve --port 7398 --log-dir /tmp/shotlog --speed 1 \
+    --profile /tmp/vc-demo.md
+```
+
+**2.** Put the subject on the main display in a headed Chrome with a fresh profile, and make it
+real macOS full screen through CDP: `--start-fullscreen` alone leaves an ordinary window, with
+the desktop and every other window around it. The subject here is question 1 of GoingVC's
+[six most popular VC interview questions](https://medium.com/vcdium/the-six-most-popular-venture-capital-interview-questions-and-how-to-answer-them-b67cd12774eb),
+scrolled to the top. Medium blocks headless Chrome and opens a sign-up dialog a few seconds in:
+use an ordinary user agent, press Escape, and click its close button.
+
+```js
+const cdp = await article.context().newCDPSession(article);
+const { windowId } = await cdp.send("Browser.getWindowForTarget");
+await cdp.send("Browser.setWindowBounds", { windowId, bounds: { windowState: "fullscreen" } });
+```
+
+**3.** Before anything is sent, check the display with a local capture that goes nowhere:
+`screencapture -x -m /tmp/precheck.png`. The first attempt here caught a windowed Chrome and a
+sign-up dialog. Delete the check once it is clean.
+
+**4.** Record the page headless at 1440x680 in the usual screenshot loop, and 2.5 s in run
+`wngmn shot --port 7398`, the command a key would run. Nothing on the page is touched. Each
+screenshot took about 290 ms here rather than 250, so the frames are 3.5 fps real time.
+
+**5.** Trim before the end-of-call prompt, which comes 20 s after the shot because a
+screenshot counts as something sent. Every frame differs by a blinking dot at the bottom, so
+find the answer's last change with the bottom strip cropped off, then keep about 4 s after it:
+
+```sh
+ffmpeg -framerate 4 -i /tmp/frames/f%04d.png -vf "crop=1440:620:0:0" -f framemd5 -
+```
+
+Assemble 45 frames with the same two-pass palette at 1180 wide, at `-framerate 3.5`. One real
+Claude call. Stop the server and delete `/tmp/shotlog`, which holds the picture that was sent.
+
 ## `docs/images/phone.png` — the page at phone width
 
 Same server as the GIF, started with `--listen` instead of `--serve` so the capture uses the
