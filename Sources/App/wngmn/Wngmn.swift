@@ -300,7 +300,8 @@ struct Wngmn {
             port: options.servePort,
             listenOnLAN: options.serveOnLAN,
             token: tokenPlan?.value,
-            onAsk: askHandler(options: options, profiles: profiles, conversation: conversation),
+            onAsk: askHandler(
+                options: options, profiles: profiles, conversation: conversation, control: control),
             onControl: controlHandler(control: control),
             onSummarise: onSummarise,
             onShot: onShot,
@@ -494,7 +495,8 @@ struct Wngmn {
     /// reported on the page when you press the button — with the reason — instead of
     /// silently disabling the button before the interview starts.
     private static func askHandler(
-        options: Options, profiles: ProfileSource, conversation: CallConversation
+        options: Options, profiles: ProfileSource, conversation: CallConversation,
+        control: CaptureControl
     ) -> AskHandler {
         { payload, emit in
             // Returned rather than dropped, so the server can cancel it if the question is
@@ -506,15 +508,20 @@ struct Wngmn {
                     guard let credentials = Credentials.resolveIncludingCLI() else {
                         throw ClaudeClient.Failure.noCredentials
                     }
-                    let (question, speaker) = try parseAskPayload(payload)
+                    let (question, speaker, recent) = try parseAskPayload(payload)
                     var configuration = ClaudeClient.Configuration()
                     configuration.model = options.askModel
                     configuration.effort = options.askEffort
                     // The profile is read per request, so an edit to the file lands on the
                     // next Ask; the conversation's own system turn stays the one it started
                     // with, for auto.
+                    //
+                    // With auto off nothing spoken is in the ledger, so the lines the page saw
+                    // before this one come with it. With auto on they are already there, in
+                    // the turns auto closed.
                     let (system, messages) = await conversation.askRequest(
-                        text: question, speaker: speaker, profile: profiles.current())
+                        text: question, speaker: speaker,
+                        before: control.autoAnswer ? [] : recent, profile: profiles.current())
                     let heard = Mutex("")
                     try await ClaudeClient(configuration: configuration).stream(
                         system: system, messages: messages,
@@ -542,14 +549,19 @@ struct Wngmn {
         }
     }
 
-    private static func parseAskPayload(_ payload: String) throws -> (String, Speaker) {
+    private static func parseAskPayload(
+        _ payload: String
+    ) throws -> (String, Speaker, [(speaker: Speaker, text: String)]) {
         guard let data = payload.data(using: .utf8),
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let question = root["question"] as? String,
               !question.trimmingCharacters(in: .whitespaces).isEmpty
         else { throw AskPayloadError.malformed }
-        let speaker = (root["speaker"] as? String).flatMap(Speaker.init(rawValue:)) ?? .caller
-        return (question, speaker)
+        func speaker(_ raw: Any?) -> Speaker { (raw as? String).flatMap(Speaker.init(rawValue:)) ?? .caller }
+        let recent = (root["recent"] as? [[String: Any]] ?? []).compactMap { line in
+            (line["text"] as? String).map { (speaker: speaker(line["speaker"]), text: $0) }
+        }
+        return (question, speaker(root["speaker"]), recent)
     }
 
     private enum AskPayloadError: Error, CustomStringConvertible {

@@ -162,6 +162,9 @@ the screenshots in hand, and the answers already given, and is committed back wi
 tail — with auto on, its turn may have closed a moment before the tap landed. The Ask's
 system turn is rebuilt from a freshly read profile, so a mid-call edit lands on the next
 Ask even though auto keeps the system it started with.
+With auto off nothing spoken reaches the ledger, so the page also sends the six spoken lines
+before the asked one, and the server commits those the ledger does not already hold ahead
+of it. With auto on they are ignored: the turns are already there.
 
 ### wngmn — the executable
 

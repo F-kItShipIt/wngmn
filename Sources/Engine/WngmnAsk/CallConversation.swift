@@ -105,10 +105,26 @@ public actor CallConversation {
     /// though auto keeps the system it started with. The request ends with an instruction
     /// that is not committed, like the summary's: pressing Ask is asking, and NONE is not an
     /// answer to it.
+    ///
+    /// `before` is the lines said before this one, for when auto is off: nothing spoken
+    /// reaches the ledger then, and a follow-up asked on its own has nothing to follow. Each is
+    /// committed ahead of the line unless the ledger already holds it — the page sends the
+    /// same six lines with consecutive Asks, and a line may sit inside a turn auto answered
+    /// before it was unticked.
     public func askRequest(
-        text: String, speaker: Speaker, profile: Profile
+        text: String, speaker: Speaker, before: [(speaker: Speaker, text: String)] = [],
+        profile: Profile
     ) -> (system: String, messages: [ClaudeClient.Message]) {
-        let labelled = "\(speaker == .caller ? "Caller" : "You"): \(text)"
+        for line in before {
+            let held = entries.contains { $0.shotKey == nil && $0.message.role == "user"
+                && $0.message.text.contains(line.text) }
+            if !held {
+                entries.append(Entry(
+                    message: ClaudeClient.Message(role: "user", text: Self.label(line.text, line.speaker)),
+                    shotKey: nil))
+            }
+        }
+        let labelled = Self.label(text, speaker)
         let lastIsThisLine = entries.last.map { $0.shotKey == nil && $0.message.text == labelled } ?? false
         if !lastIsThisLine {
             entries.append(Entry(message: ClaudeClient.Message(role: "user", text: labelled), shotKey: nil))
@@ -228,8 +244,11 @@ public actor CallConversation {
 
     /// One turn as a labelled user message.
     static func userMessage(for turn: TurnBatcher.Turn) -> String {
-        let who = turn.speaker == .caller ? "Caller" : "You"
-        return "\(who): \(turn.text)"
+        label(turn.text, turn.speaker)
+    }
+
+    static func label(_ text: String, _ speaker: Speaker) -> String {
+        "\(speaker == .caller ? "Caller" : "You"): \(text)"
     }
 
     /// The picture, then the words that refer to it — the order the vision documentation

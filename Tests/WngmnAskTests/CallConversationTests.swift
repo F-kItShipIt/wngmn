@@ -337,4 +337,47 @@ struct CallConversationTests {
         #expect(messages.count == 2)
         #expect(messages.allSatisfy { !$0.text.contains("pressed Ask") })
     }
+
+    /// With auto off nothing spoken reaches the ledger, so an Ask on a follow-up would carry
+    /// the follow-up alone. The lines said before it come with it, as they did before the
+    /// Ask had a ledger to draw on.
+    @Test("With auto off, an Ask carries the lines said before it")
+    func askCarriesTheLinesBefore() async {
+        let convo = CallConversation(profile: profile())
+        let (_, messages) = await convo.askRequest(
+            text: "Can you do it in place?", speaker: .caller,
+            before: [(.caller, "Write a function that reverses a list."), (.you, "Sure, give me a second.")],
+            profile: profile())
+        #expect(messages.map(\.text).dropLast() == [
+            "Caller: Write a function that reverses a list.",
+            "You: Sure, give me a second.",
+            "Caller: Can you do it in place?",
+        ])
+    }
+
+    /// The page sends the six lines before every Ask, so consecutive Asks overlap; and a line
+    /// may already be in the ledger as part of a turn auto answered before it was unticked.
+    @Test("Lines before an Ask that the ledger already holds are not added again")
+    func askSkipsLinesAlreadyHeld() async {
+        let convo = CallConversation(profile: profile())
+        _ = await convo.startTurn(turn("Tell me about the round. Who led it?"))
+        await convo.finishTurn(answer: "Acme led it.")
+        _ = await convo.askRequest(
+            text: "How much was it?", speaker: .caller,
+            before: [(.caller, "Tell me about the round."), (.caller, "Who led it?")],
+            profile: profile())
+        await convo.finishTurn(answer: "Ten million.")
+        let (_, messages) = await convo.askRequest(
+            text: "And the valuation?", speaker: .caller,
+            before: [(.caller, "Who led it?"), (.caller, "How much was it?"), (.you, "Let me check.")],
+            profile: profile())
+        #expect(messages.map(\.text).dropLast() == [
+            "Caller: Tell me about the round. Who led it?",
+            "Acme led it.",
+            "Caller: How much was it?",
+            "Ten million.",
+            "You: Let me check.",
+            "Caller: And the valuation?",
+        ])
+    }
 }

@@ -1396,6 +1396,16 @@ function copyToClipboard(button, text) {
   );
 }
 
+// The six lines before a manual Ask, with whose they were. The server uses them only while
+// auto is off — with auto on, its ledger already holds every turn. Only what came before (a
+// later line is not context for it), and only what was said: a screenshot's label must not be
+// offered to the model as though someone had spoken it.
+function recentBefore(list, q) {
+  const index = list.indexOf(q);
+  return list.slice(0, index < 0 ? list.length : index)
+    .filter(x => !isShot(x)).slice(-6).map(x => ({ text: x.text, speaker: x.speaker || "caller" }));
+}
+
 // Fires the request and returns. The answer is rendered from `/events` like everything
 // else, so a laptop and a phone show the same thing because they are running the same code
 // path, not because two paths were kept in step.
@@ -1409,15 +1419,16 @@ async function askFor(q) {
   renderAnswer(q);
 
   // The answer is written from the whole call on the server — earlier turns, the
-  // screenshots in hand, and the answers already given — so the page only says which line,
-  // and whose it was. It deliberately sends no `recent` of its own: a context built here
-  // would pass a screenshot's label off as speech, and the server's ledger already has the
-  // picture.
+  // screenshots in hand, and the answers already given. `recent` covers the one gap in that
+  // ledger: with auto off, nothing spoken reaches it.
   try {
     const res = await fetch("/ask" + window.location.search, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ question: q.text, speaker: q.speaker || "caller", key: questionKey(q), t1: q.t1 }),
+      body: JSON.stringify({
+        question: q.text, speaker: q.speaker || "caller", recent: recentBefore(questions, q),
+        key: questionKey(q), t1: q.t1,
+      }),
     });
     if (!res.ok) throw new Error("server returned " + res.status);
   } catch (e) {
