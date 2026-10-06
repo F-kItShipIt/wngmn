@@ -269,4 +269,115 @@ struct CallConversationTests {
         let kept = messages.reduce(0) { $0 + CallConversation.pictureBytes($1) }
         #expect(kept <= CallConversation.pictureByteBudget)
     }
+
+    // MARK: - Manual Ask
+
+    /// The point of the Ask path: a follow-up to a screenshot's answer is answered with the
+    /// screenshot, the answer, and the follow-up all in one request — the stateless Ask it
+    /// replaced sent the line and a few before it, and neither picture nor answer.
+    @Test("An Ask is answered from the whole call: turns, shots, and earlier answers")
+    func askSeesTheWholeCall() async {
+        let convo = CallConversation(profile: profile())
+        _ = await convo.startBatch([.turn(turn("Let me paste this here.")), .shot(shot(10))])
+        await convo.finishTurn(answer: "It is a graph of retention by cohort.")
+        let (_, messages) = await convo.askRequest(
+            text: "And what does it say for March?", speaker: .caller, profile: profile())
+        #expect(messages.count == 5)
+        #expect(messages[0].text == "Caller: Let me paste this here.")
+        #expect(CallConversation.hasPicture(messages[1]), "the screenshot rides along")
+        #expect(messages[2].text == "It is a graph of retention by cohort.")
+        #expect(messages[3].text == "Caller: And what does it say for March?")
+        #expect(messages[4].text.contains("never reply NONE"))
+    }
+
+    /// With auto on, the turn a line belongs to may have closed the moment before the tap
+    /// landed. Appending it again would send the same words twice in a row.
+    @Test("An Ask is not duplicated when its line is already the tail of the conversation")
+    func askDoesNotDuplicateTheTail() async {
+        let convo = CallConversation(profile: profile())
+        _ = await convo.startTurn(turn("What is your burn rate?"))
+        let (_, messages) = await convo.askRequest(
+            text: "What is your burn rate?", speaker: .caller, profile: profile())
+        #expect(messages.count == 2, "the turn it already holds, plus the instruction")
+        #expect(messages[0].text == "Caller: What is your burn rate?")
+    }
+
+    /// Committed like an auto answer: what an Ask said is context for the next Ask, and for
+    /// every turn after it.
+    @Test("An Ask's answer joins the conversation, so the next Ask sees it")
+    func askAnswerCarriesForward() async {
+        let convo = CallConversation(profile: profile())
+        _ = await convo.askRequest(text: "What is your burn rate?", speaker: .caller, profile: profile())
+        await convo.finishTurn(answer: "About 400k a month.")
+        let (_, messages) = await convo.askRequest(
+            text: "And your runway?", speaker: .caller, profile: profile())
+        #expect(messages[1].role == "assistant")
+        #expect(messages[1].text == "About 400k a month.")
+    }
+
+    /// Auto keeps the system it started with; an Ask reads the file per request, so a
+    /// mid-call edit lands on the next one.
+    @Test("An Ask rebuilds its system turn from the profile read just now")
+    func askReadsTheProfileFresh() async {
+        let convo = CallConversation(profile: profile(style: "start", context: "start"))
+        let (system, _) = await convo.askRequest(
+            text: "Hi", speaker: .caller, profile: profile(style: "edited style", context: "edited material"))
+        #expect(system.hasPrefix("edited style"))
+        #expect(system.contains("edited material"))
+    }
+
+    /// The instruction rides last so the live-call protocol's standing permission to reply
+    /// NONE does not apply to a line the user pressed a button about — and it is a leaf,
+    /// never itself context for anything.
+    @Test("The Ask instruction is not committed to the conversation")
+    func askInstructionIsALeaf() async {
+        let convo = CallConversation(profile: profile())
+        _ = await convo.askRequest(text: "What is your burn rate?", speaker: .caller, profile: profile())
+        let (_, messages) = await convo.startTurn(turn("Anything else?"))
+        #expect(messages.count == 2)
+        #expect(messages.allSatisfy { !$0.text.contains("pressed Ask") })
+    }
+
+    /// With auto off nothing spoken reaches the ledger, so an Ask on a follow-up would carry
+    /// the follow-up alone. The lines said before it come with it, as they did before the
+    /// Ask had a ledger to draw on.
+    @Test("With auto off, an Ask carries the lines said before it")
+    func askCarriesTheLinesBefore() async {
+        let convo = CallConversation(profile: profile())
+        let (_, messages) = await convo.askRequest(
+            text: "Can you do it in place?", speaker: .caller,
+            before: [(.caller, "Write a function that reverses a list."), (.you, "Sure, give me a second.")],
+            profile: profile())
+        #expect(messages.map(\.text).dropLast() == [
+            "Caller: Write a function that reverses a list.",
+            "You: Sure, give me a second.",
+            "Caller: Can you do it in place?",
+        ])
+    }
+
+    /// The page sends the six lines before every Ask, so consecutive Asks overlap; and a line
+    /// may already be in the ledger as part of a turn auto answered before it was unticked.
+    @Test("Lines before an Ask that the ledger already holds are not added again")
+    func askSkipsLinesAlreadyHeld() async {
+        let convo = CallConversation(profile: profile())
+        _ = await convo.startTurn(turn("Tell me about the round. Who led it?"))
+        await convo.finishTurn(answer: "Acme led it.")
+        _ = await convo.askRequest(
+            text: "How much was it?", speaker: .caller,
+            before: [(.caller, "Tell me about the round."), (.caller, "Who led it?")],
+            profile: profile())
+        await convo.finishTurn(answer: "Ten million.")
+        let (_, messages) = await convo.askRequest(
+            text: "And the valuation?", speaker: .caller,
+            before: [(.caller, "Who led it?"), (.caller, "How much was it?"), (.you, "Let me check.")],
+            profile: profile())
+        #expect(messages.map(\.text).dropLast() == [
+            "Caller: Tell me about the round. Who led it?",
+            "Acme led it.",
+            "Caller: How much was it?",
+            "Ten million.",
+            "You: Let me check.",
+            "Caller: And the valuation?",
+        ])
+    }
 }

@@ -1396,13 +1396,14 @@ function copyToClipboard(button, text) {
   );
 }
 
-// What a manual Ask sends as context: the six lines before it. Only what came before — a
-// later one is not context for it — and only what was said: a manual Ask does not see a
-// screenshot, so it must not be handed the screenshot's label as though someone had spoken it.
+// The six lines before a manual Ask, with whose they were. The server uses them only while
+// auto is off — with auto on, its ledger already holds every turn. Only what came before (a
+// later line is not context for it), and only what was said: a screenshot's label must not be
+// offered to the model as though someone had spoken it.
 function recentBefore(list, q) {
   const index = list.indexOf(q);
   return list.slice(0, index < 0 ? list.length : index)
-    .filter(x => !isShot(x)).slice(-6).map(x => x.text);
+    .filter(x => !isShot(x)).slice(-6).map(x => ({ text: x.text, speaker: x.speaker || "caller" }));
 }
 
 // Fires the request and returns. The answer is rendered from `/events` like everything
@@ -1417,14 +1418,17 @@ async function askFor(q) {
   markRows();
   renderAnswer(q);
 
-  // Only what came before this question — a later one is not context for it.
-  const recent = recentBefore(questions, q);
-
+  // The answer is written from the whole call on the server — earlier turns, the
+  // screenshots in hand, and the answers already given. `recent` covers the one gap in that
+  // ledger: with auto off, nothing spoken reaches it.
   try {
     const res = await fetch("/ask" + window.location.search, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ question: q.text, recent, key: questionKey(q), t1: q.t1 }),
+      body: JSON.stringify({
+        question: q.text, speaker: q.speaker || "caller", recent: recentBefore(questions, q),
+        key: questionKey(q), t1: q.t1,
+      }),
     });
     if (!res.ok) throw new Error("server returned " + res.status);
   } catch (e) {
