@@ -87,6 +87,36 @@ public actor CallConversation {
         return (system, messages)
     }
 
+    /// A manual Ask, answered with the whole call behind it.
+    ///
+    /// Auto is not the only way a line gets answered — tapping Ask on the page is asking too,
+    /// and the answer should be written from everything the call already holds: earlier turns,
+    /// the screenshots in hand, and the answers already given. Before this, an Ask was a
+    /// stateless one-shot built from the line and a few before it, so a follow-up to a
+    /// screenshot's answer arrived with no screenshot and no answer in it.
+    ///
+    /// The line is appended unless it is already the tail: with auto on, its turn may have
+    /// closed the moment before the tap landed, and the same words must never appear twice in
+    /// a row. The answer is committed with `finishTurn`, so the next Ask — and every auto
+    /// answer after it — sees it.
+    ///
+    /// The system turn is rebuilt from the profile passed in rather than the one snapshotted
+    /// at start: the page reads the file per request, so an edit lands on the next Ask even
+    /// though auto keeps the system it started with. The request ends with an instruction
+    /// that is not committed, like the summary's: pressing Ask is asking, and NONE is not an
+    /// answer to it.
+    public func askRequest(
+        text: String, speaker: Speaker, profile: Profile
+    ) -> (system: String, messages: [ClaudeClient.Message]) {
+        let labelled = "\(speaker == .caller ? "Caller" : "You"): \(text)"
+        let lastIsThisLine = entries.last.map { $0.shotKey == nil && $0.message.text == labelled } ?? false
+        if !lastIsThisLine {
+            entries.append(Entry(message: ClaudeClient.Message(role: "user", text: labelled), shotKey: nil))
+        }
+        return (Self.buildSystem(profile: profile),
+                messages + [ClaudeClient.Message(role: "user", text: Self.askInstruction)])
+    }
+
     /// Takes screenshots back out. Speech is committed before it is sent and never rolled back,
     /// deliberately — the other person did say it. A picture differs: one the API rejects would
     /// be sent again, and rejected again, on every later turn for the rest of the call.
@@ -219,6 +249,14 @@ public actor CallConversation {
     The call has ended. Write meeting notes from the whole conversation above: the key \
     points, the questions that were asked and how they were answered, decisions reached, \
     and any open items. Be concise and specific; use short sections or bullets.
+    """
+
+    /// Riding last on an Ask's request and never committed, like the summary's: the ask is
+    /// explicit, so an answer must come back. Without it the live-call protocol's standing
+    /// permission to reply NONE applies to a line the user just pressed a button about.
+    static let askInstruction = """
+    I pressed Ask on the last line above: answer it directly and in full, from the whole \
+    conversation, and never reply NONE to it.
     """
 
     /// Whether a reply is the "nothing to answer" sentinel.

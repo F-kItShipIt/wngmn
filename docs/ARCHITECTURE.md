@@ -155,6 +155,14 @@ answer that has been overtaken by a revision of its question.
 written from). The answerer's turn-taking is not its own: `TurnBatcher` decides when a turn is
 over and `AnswerQueue` decides what is sent, both pure and both in `WngmnCore`.
 
+The conversation is the one ledger for the whole call, and a manual **Ask** from the page
+goes through it too (`CallConversation.askRequest`): the answer is written from the turns,
+the screenshots in hand, and the answers already given, and is committed back with
+`finishTurn`, so a follow-up Ask sees it. The line is appended unless it is already the
+tail — with auto on, its turn may have closed a moment before the tap landed. The Ask's
+system turn is rebuilt from a freshly read profile, so a mid-call edit lands on the next
+Ask even though auto keeps the system it started with.
+
 ### wngmn — the executable
 
 `Wngmn.swift` (argument dispatch and wiring), `Selftest`, `Devices`, `MicCheck`, `Shot`.
@@ -516,7 +524,7 @@ Every request is gated in this order, and the order is deliberate.
 | --- | --- | --- |
 | `/` | GET | `Page.render(hangoverMilliseconds:)` — the embedded page with the endpointer's hangover substituted in. |
 | `/events` | GET | Opens the SSE stream, registers the connection, and replays the backlog from `Last-Event-ID` or `?after=`. An unusable cursor falls through to the whole backlog. |
-| `/ask` | POST | Starts an answer and returns `202` immediately. The answer itself streams over `/events` to *every* open page, so a phone and a laptop show the same thing because they are the same path, not two kept in step. `503` when no `AskHandler` is configured. |
+| `/ask` | POST | Starts an answer and returns `202` immediately. The answer is written from the whole conversation — turns, screenshots in hand, and earlier answers — and joins it once given. The answer itself streams over `/events` to *every* open page, so a phone and a laptop show the same thing because they are the same path, not two kept in step. `503` when no `AskHandler` is configured. |
 | `/control` | POST | Applies a capture change and replies with the resulting state as JSON — request/response rather than a stream, because the page must know the change landed before it repaints the button. `503` unconfigured, `400` on a body it will not parse. A body carrying only a `scroll` anchor is relayed live to other pages and answered `200`. |
 | `/summarise` | POST | Asks for the end-of-call notes and returns `202`; they stream back as `summary_*` frames. The handler is called *before* the `202` is sent — the opposite order to `/ask`. `503` unconfigured. |
 | `/shot` | POST | Asks the running wngmn to take a picture of the screen: `{"mode":"screen"}` or `{"mode":"region"}`, `400` for anything else, `403` from anywhere but this machine, `503` unconfigured. Handler before `202`, as for `/summarise`, and the handler must return at once: it runs on `wngmn.serve`, the one serial queue that carries the listener and every connection, and a region shot can sit under a crosshair for a minute. The picture never crosses this server in either direction — the request is a few bytes and the reply is `{"ok":true}` — which is the reason for the design: `receive` drops anything over 64 KB and decodes bodies as UTF-8. |

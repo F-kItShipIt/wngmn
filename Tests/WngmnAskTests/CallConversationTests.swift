@@ -269,4 +269,72 @@ struct CallConversationTests {
         let kept = messages.reduce(0) { $0 + CallConversation.pictureBytes($1) }
         #expect(kept <= CallConversation.pictureByteBudget)
     }
+
+    // MARK: - Manual Ask
+
+    /// The point of the Ask path: a follow-up to a screenshot's answer is answered with the
+    /// screenshot, the answer, and the follow-up all in one request — the stateless Ask it
+    /// replaced sent the line and a few before it, and neither picture nor answer.
+    @Test("An Ask is answered from the whole call: turns, shots, and earlier answers")
+    func askSeesTheWholeCall() async {
+        let convo = CallConversation(profile: profile())
+        _ = await convo.startBatch([.turn(turn("Let me paste this here.")), .shot(shot(10))])
+        await convo.finishTurn(answer: "It is a graph of retention by cohort.")
+        let (_, messages) = await convo.askRequest(
+            text: "And what does it say for March?", speaker: .caller, profile: profile())
+        #expect(messages.count == 5)
+        #expect(messages[0].text == "Caller: Let me paste this here.")
+        #expect(CallConversation.hasPicture(messages[1]), "the screenshot rides along")
+        #expect(messages[2].text == "It is a graph of retention by cohort.")
+        #expect(messages[3].text == "Caller: And what does it say for March?")
+        #expect(messages[4].text.contains("never reply NONE"))
+    }
+
+    /// With auto on, the turn a line belongs to may have closed the moment before the tap
+    /// landed. Appending it again would send the same words twice in a row.
+    @Test("An Ask is not duplicated when its line is already the tail of the conversation")
+    func askDoesNotDuplicateTheTail() async {
+        let convo = CallConversation(profile: profile())
+        _ = await convo.startTurn(turn("What is your burn rate?"))
+        let (_, messages) = await convo.askRequest(
+            text: "What is your burn rate?", speaker: .caller, profile: profile())
+        #expect(messages.count == 2, "the turn it already holds, plus the instruction")
+        #expect(messages[0].text == "Caller: What is your burn rate?")
+    }
+
+    /// Committed like an auto answer: what an Ask said is context for the next Ask, and for
+    /// every turn after it.
+    @Test("An Ask's answer joins the conversation, so the next Ask sees it")
+    func askAnswerCarriesForward() async {
+        let convo = CallConversation(profile: profile())
+        _ = await convo.askRequest(text: "What is your burn rate?", speaker: .caller, profile: profile())
+        await convo.finishTurn(answer: "About 400k a month.")
+        let (_, messages) = await convo.askRequest(
+            text: "And your runway?", speaker: .caller, profile: profile())
+        #expect(messages[1].role == "assistant")
+        #expect(messages[1].text == "About 400k a month.")
+    }
+
+    /// Auto keeps the system it started with; an Ask reads the file per request, so a
+    /// mid-call edit lands on the next one.
+    @Test("An Ask rebuilds its system turn from the profile read just now")
+    func askReadsTheProfileFresh() async {
+        let convo = CallConversation(profile: profile(style: "start", context: "start"))
+        let (system, _) = await convo.askRequest(
+            text: "Hi", speaker: .caller, profile: profile(style: "edited style", context: "edited material"))
+        #expect(system.hasPrefix("edited style"))
+        #expect(system.contains("edited material"))
+    }
+
+    /// The instruction rides last so the live-call protocol's standing permission to reply
+    /// NONE does not apply to a line the user pressed a button about — and it is a leaf,
+    /// never itself context for anything.
+    @Test("The Ask instruction is not committed to the conversation")
+    func askInstructionIsALeaf() async {
+        let convo = CallConversation(profile: profile())
+        _ = await convo.askRequest(text: "What is your burn rate?", speaker: .caller, profile: profile())
+        let (_, messages) = await convo.startTurn(turn("Anything else?"))
+        #expect(messages.count == 2)
+        #expect(messages.allSatisfy { !$0.text.contains("pressed Ask") })
+    }
 }

@@ -1396,17 +1396,23 @@ struct ScreenshotRowTests {
         #expect(got == "Tell me about the round.|shot")
     }
 
-    /// Manual Ask stays stateless by design — it does not see the picture — so it must not see
-    /// the picture's label either, offered to the model as something that was said.
-    @Test("A later Ask does not pass the shot's label off as speech", .enabled(if: PageTests.nodeIsAvailable))
-    func askContextSkipsShots() throws {
+    /// The answer is written from the whole call on the server — turns, screenshots, and the
+    /// answers already given — so the page sends only what the line is and whose it was. A
+    /// `recent` built here would pass a screenshot's label off as something somebody said,
+    /// and the server's ledger already has the picture.
+    @Test("A manual Ask sends the line and its speaker, never a stateless recent", .enabled(if: PageTests.nodeIsAvailable))
+    func askSendsLineAndSpeaker() throws {
         let got = try run("""
+            const sent = [];
+            globalThis.fetch = (url, opts) => { sent.push(JSON.parse(opts.body)); return Promise.resolve({ ok: true }); };
             handleEvent(\(Self.question));
             handleEvent(\(Self.shot));
-            handleEvent({type:'question', text:'Can you do it in place?', t0:90, t1:92, ms:88});
-            return JSON.stringify(recentBefore(questions, questions[2]));
+            handleEvent({type:'question', text:'Can you do it in place?', t0:90, t1:92, ms:88, speaker:'caller'});
+            ask(questions[2]);
+            const b = sent[0];
+            return [b.question, b.speaker, b.key, b.t1, "recent" in b].join("|");
             """)
-        #expect(got == #"["Let me paste this here."]"#)
+        #expect(got == "Can you do it in place?|caller|caller@90|92|false")
     }
 
     @Test("Nothing that can ask a row asks a shot", .enabled(if: PageTests.nodeIsAvailable))

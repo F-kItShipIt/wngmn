@@ -1396,15 +1396,6 @@ function copyToClipboard(button, text) {
   );
 }
 
-// What a manual Ask sends as context: the six lines before it. Only what came before — a
-// later one is not context for it — and only what was said: a manual Ask does not see a
-// screenshot, so it must not be handed the screenshot's label as though someone had spoken it.
-function recentBefore(list, q) {
-  const index = list.indexOf(q);
-  return list.slice(0, index < 0 ? list.length : index)
-    .filter(x => !isShot(x)).slice(-6).map(x => x.text);
-}
-
 // Fires the request and returns. The answer is rendered from `/events` like everything
 // else, so a laptop and a phone show the same thing because they are running the same code
 // path, not because two paths were kept in step.
@@ -1417,14 +1408,16 @@ async function askFor(q) {
   markRows();
   renderAnswer(q);
 
-  // Only what came before this question — a later one is not context for it.
-  const recent = recentBefore(questions, q);
-
+  // The answer is written from the whole call on the server — earlier turns, the
+  // screenshots in hand, and the answers already given — so the page only says which line,
+  // and whose it was. It deliberately sends no `recent` of its own: a context built here
+  // would pass a screenshot's label off as speech, and the server's ledger already has the
+  // picture.
   try {
     const res = await fetch("/ask" + window.location.search, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ question: q.text, recent, key: questionKey(q), t1: q.t1 }),
+      body: JSON.stringify({ question: q.text, speaker: q.speaker || "caller", key: questionKey(q), t1: q.t1 }),
     });
     if (!res.ok) throw new Error("server returned " + res.status);
   } catch (e) {

@@ -51,16 +51,21 @@ struct Wngmn {
         // Late-bound for the same reason and then some: taking a picture needs the answerer,
         // the writer and the teardown, all of which are built after the server.
         let shotTrigger = Mutex<(@Sendable (ShotMode) -> Void)?>(nil)
+        // One ledger for the whole call, shared by auto answers and by manual Ask: an Ask is
+        // answered from everything the call already holds — earlier turns, the screenshots in
+        // hand, and the answers already given — not from the line alone. Created before the
+        // server, whose Ask handler closes over it. The profile inside it is snapshotted at
+        // start; Ask rebuilds its system turn from a fresh read per request, so a mid-call
+        // edit lands on the next Ask but never changes the auto system prompt.
+        let conversation = CallConversation(profile: profiles.current())
         let server = startServerIfRequested(
-            options, control: control, profiles: profiles,
+            options, control: control, profiles: profiles, conversation: conversation,
             onSummarise: { summariseTrigger.withLock { $0 }?() },
             onShot: { mode in shotTrigger.withLock { $0 }?(mode) })
 
         // Real-time auto-answering. Only when a page is being served (there is somewhere to
         // push answers) and gated at runtime by the page's `auto` toggle — on from the start
         // unless `--no-auto` was passed or there are no credentials to answer with.
-        // The conversation is the shared ledger for the whole call; the profile is snapshotted
-        // at start, so a mid-call edit changes manual Ask but not the auto system prompt.
         if server != nil {
             // Said at startup, because it is the loudest thing this program does by itself and
             // it used to need a click: what is heard is sent, as each turn ends, with no press.
@@ -73,7 +78,7 @@ struct Wngmn {
         }
         let autoAnswerer: AutoAnswerer? = server.map { srv in
             AutoAnswerer(
-                conversation: CallConversation(profile: profiles.current()),
+                conversation: conversation,
                 answerOwnQuestions: true,
                 ownTurnMinimumWords: options.autoOwnMinWords,
                 isEnabled: { control.autoAnswer },
@@ -283,6 +288,7 @@ struct Wngmn {
     /// that transcribes to a page nobody can open is not what they wanted.
     private static func startServerIfRequested(
         _ options: Options, control: CaptureControl, profiles: ProfileSource,
+        conversation: CallConversation,
         onSummarise: @escaping @Sendable () -> Void,
         onShot: @escaping @Sendable (ShotMode) -> Void
     ) -> TranscriptServer? {
@@ -294,7 +300,7 @@ struct Wngmn {
             port: options.servePort,
             listenOnLAN: options.serveOnLAN,
             token: tokenPlan?.value,
-            onAsk: askHandler(options: options, profiles: profiles),
+            onAsk: askHandler(options: options, profiles: profiles, conversation: conversation),
             onControl: controlHandler(control: control),
             onSummarise: onSummarise,
             onShot: onShot,
@@ -476,12 +482,20 @@ struct Wngmn {
         }
     }
 
-    /// Answers one question from the served page.
+    /// Answers one question from the served page, with the whole call behind it.
+    ///
+    /// The Ask goes through the same `CallConversation` as auto: it is written from the
+    /// earlier turns, the screenshots in hand, and the answers already given, and its answer
+    /// is committed back, so a follow-up Ask sees it. Before this an Ask was a stateless
+    /// one-shot — the line plus a few before it — so a follow-up to a screenshot's answer
+    /// arrived with neither the screenshot nor the answer in it.
     ///
     /// Credentials are resolved per request rather than at startup, so a missing key is
     /// reported on the page when you press the button — with the reason — instead of
     /// silently disabling the button before the interview starts.
-    private static func askHandler(options: Options, profiles: ProfileSource) -> AskHandler {
+    private static func askHandler(
+        options: Options, profiles: ProfileSource, conversation: CallConversation
+    ) -> AskHandler {
         { payload, emit in
             // Returned rather than dropped, so the server can cancel it if the question is
             // revised before the answer finishes. Cancellation reaches `URLSession`, which
@@ -492,14 +506,18 @@ struct Wngmn {
                     guard let credentials = Credentials.resolveIncludingCLI() else {
                         throw ClaudeClient.Failure.noCredentials
                     }
-                    let (question, recent) = try parseAskPayload(payload)
+                    let (question, speaker) = try parseAskPayload(payload)
                     var configuration = ClaudeClient.Configuration()
                     configuration.model = options.askModel
                     configuration.effort = options.askEffort
+                    // The profile is read per request, so an edit to the file lands on the
+                    // next Ask; the conversation's own system turn stays the one it started
+                    // with, for auto.
+                    let (system, messages) = await conversation.askRequest(
+                        text: question, speaker: speaker, profile: profiles.current())
+                    let heard = Mutex("")
                     try await ClaudeClient(configuration: configuration).stream(
-                        // Read per request, so an edit to the file lands on the next Ask.
-                        prompt: AnswerPrompt.build(
-                            question: question, recent: recent, profile: profiles.current()),
+                        system: system, messages: messages,
                         credentials: credentials,
                         // Reported rather than assumed. A cache invalidated by something
                         // upstream produces a request that looks identical and costs full
@@ -512,7 +530,10 @@ struct Wngmn {
                             )
                         },
                         onTruncated: { emit(.truncated) }
-                    ) { text in emit(.text(text)) }
+                    ) { text in heard.withLock { $0 += text }; emit(.text(text)) }
+                    // Committed like an auto answer: the next Ask, and every later turn,
+                    // sees what this one said. A NONE is kept out by `finishTurn` itself.
+                    await conversation.finishTurn(answer: heard.withLock { $0 })
                     emit(.done)
                 } catch {
                     emit(.failed("\(error)"))
@@ -521,13 +542,14 @@ struct Wngmn {
         }
     }
 
-    private static func parseAskPayload(_ payload: String) throws -> (String, [String]) {
+    private static func parseAskPayload(_ payload: String) throws -> (String, Speaker) {
         guard let data = payload.data(using: .utf8),
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let question = root["question"] as? String,
               !question.trimmingCharacters(in: .whitespaces).isEmpty
         else { throw AskPayloadError.malformed }
-        return (question, root["recent"] as? [String] ?? [])
+        let speaker = (root["speaker"] as? String).flatMap(Speaker.init(rawValue:)) ?? .caller
+        return (question, speaker)
     }
 
     private enum AskPayloadError: Error, CustomStringConvertible {
