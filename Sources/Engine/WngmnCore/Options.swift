@@ -35,7 +35,7 @@ public struct Options: Sendable, Equatable {
 
     /// The version, and the only place it is written down: `Scripts/build-app.sh` reads it
     /// from here into the bundle's Info.plist, so `--version` and Finder never disagree.
-    public static let version = "0.4.4"
+    public static let version = "0.4.5"
 
     public var command: Command = .run
     /// Bundle IDs to scope the tap to, when it is scoped. Chrome renders Meet audio from a
