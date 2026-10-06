@@ -23,7 +23,10 @@ cd "$(dirname "$0")/.."
 # Changing this later creates a new TCC subject, so macOS forgets any permission already
 # granted and asks again. Pick it once.
 BUNDLE_ID="${BUNDLE_ID:-local.wngmn.Wngmn}"
-VERSION="${VERSION:-0.4.4}"
+# Read from the Swift source rather than written here, so the bundle and `wngmn --version`
+# can never say different things.
+VERSION="$(sed -n 's/.*static let version = "\(.*\)".*/\1/p' Sources/Engine/WngmnCore/Options.swift)"
+[ -n "$VERSION" ] || { echo "error: no version found in Sources/Engine/WngmnCore/Options.swift" >&2; exit 1; }
 ARCHS="${ARCHS:-arm64 x86_64}"
 SIGN_ID="${SIGN_ID:--}"          # `-` is ad-hoc
 APP="build/wngmn.app"

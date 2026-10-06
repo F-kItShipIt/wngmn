@@ -22,6 +22,11 @@ struct Wngmn {
             exit(0)
         }
 
+        if options.command == .version {
+            print("wngmn \(Options.version)")
+            exit(0)
+        }
+
         // A client, so it leaves here, before the profile, the server and the signal handlers.
         // Dispatched with the other commands below, it would first have been through
         // `startServerIfRequested` with the --port it was given — the port of the wngmn it is
@@ -229,8 +234,8 @@ struct Wngmn {
                 try await runOffline(options: options, terms: terms, writer: writer)
             case .installModel:
                 try await installModel(options: options)
-            case .help, .shot:
-                break   // both left before anything above was built
+            case .help, .version, .shot:
+                break   // all left before anything above was built
             }
         } catch {
             writer.emit(.error(code: "fatal", detail: "\(error)"))
