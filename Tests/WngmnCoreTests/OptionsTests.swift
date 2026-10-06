@@ -17,6 +17,16 @@ struct OptionsTests {
         #expect(o.fastResults)
     }
 
+    /// There was no way to ask an installed wngmn which build it is, short of reading the
+    /// bundle's Info.plist — which `Scripts/build-app.sh` now fills from this same constant.
+    @Test("--version, or version, asks for the version")
+    func version() throws {
+        #expect(try Options.parse(["--version"]).command == .version)
+        #expect(try Options.parse(["version"]).command == .version)
+        #expect(Options.version.wholeMatch(of: /\d+\.\d+\.\d+/) != nil)
+        #expect(Options.usage.contains("--version"))
+    }
+
     /// It used to hear Zoom and Chrome and nothing else, unless told `--global`. A call in
     /// Teams, FaceTime, Slack or Safari was silence with every status code reading success,
     /// and the README ended up putting `--global` on every command it printed — which is a

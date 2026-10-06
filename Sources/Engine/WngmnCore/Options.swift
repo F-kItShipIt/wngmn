@@ -28,8 +28,14 @@ public struct Options: Sendable, Equatable {
         /// Download the speech model for a locale. Explicit, because a 396 MB download is
         /// not something to start by accident an hour before an interview.
         case installModel = "install-model"
+        /// Print which build this is.
+        case version
         case help
     }
+
+    /// The version, and the only place it is written down: `Scripts/build-app.sh` reads it
+    /// from here into the bundle's Info.plist, so `--version` and Finder never disagree.
+    public static let version = "0.4.4"
 
     public var command: Command = .run
     /// Bundle IDs to scope the tap to, when it is scoped. Chrome renders Meet audio from a
@@ -237,6 +243,7 @@ public struct Options: Sendable, Equatable {
             let arg = args[i]
             switch arg {
             case "-h", "--help": o.command = .help
+            case "--version": o.command = .version
             case "--bundle-id": explicitBundleIDs.append(try value(arg))
             case "--global": explicitGlobal = true
             case "--call-apps": callAppsOnly = true
@@ -436,6 +443,7 @@ public struct Options: Sendable, Equatable {
       wngmn shot [--region]        have the running wngmn take a picture of the screen and
                                    answer it; --region drags a rectangle instead. Bind it to
                                    a key. Takes the --port and --token the server was given.
+      wngmn --version              print which version this is
 
     CAPTURE
       By default the tap hears everything the Mac plays, whatever app the call is in.
